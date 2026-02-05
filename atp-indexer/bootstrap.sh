@@ -332,7 +332,7 @@ function deploy() {
 
   yarn install --frozen-lockfile
   if [ "$infra_environment" = "testnet" ]; then
-  yarn bootstrap-testnet
+    yarn bootstrap-testnet
   else
     yarn bootstrap
   fi

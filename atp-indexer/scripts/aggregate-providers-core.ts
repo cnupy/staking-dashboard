@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 
 export interface ProviderMetadata {
   providerId: number;
@@ -142,8 +142,8 @@ export function aggregateProvidersFromDir(providersDir: string, outputFile: stri
       .map(entry => entry.provider)
       .sort((a, b) => a.providerId - b.providerId);
 
-    // Create output directory if it doesn't exist
-    const outputDir = outputFile.substring(0, outputFile.lastIndexOf('/'));
+    // Create output directory if it doesn't exist (cross-platform)
+    const outputDir = dirname(outputFile);
     mkdirSync(outputDir, { recursive: true });
 
     // Write aggregated file
