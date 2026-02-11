@@ -13,6 +13,14 @@ const ATPCreatedEvent = parseAbiItem(
   "event ATPCreated(address indexed beneficiary, address indexed atp, uint256 allocation)"
 );
 
+// Per-factory start blocks for efficient indexing
+const FACTORY_START_BLOCKS = {
+  genesis: config.START_BLOCK || 0,
+  auction: config.START_BLOCK || 0,
+  employee: config.EMPLOYEE_FACTORY_START_BLOCK || config.START_BLOCK || 0,
+  investor: config.INVESTOR_FACTORY_START_BLOCK || config.START_BLOCK || 0,
+};
+
 
 let databaseConfig: DatabaseConfig | undefined;
 
@@ -48,14 +56,14 @@ export default createConfig({
   },
   contracts: {
     /**
-     * ATP Factory - Main contract
+     * ATP Factory - Genesis Sale contract
      * Emits ATPCreated events when new ATP positions are created
      */
     ATPFactory: {
       chain: config.networkName,
       abi: ATP_ABI,
       address: config.ATP_FACTORY_ADDRESS as `0x${string}`,
-      startBlock: config.START_BLOCK,
+      startBlock: FACTORY_START_BLOCKS.genesis,
     },
 
     /**
@@ -66,7 +74,29 @@ export default createConfig({
       chain: config.networkName,
       abi: ATP_ABI,
       address: config.ATP_FACTORY_AUCTION_ADDRESS as `0x${string}`,
-      startBlock: config.START_BLOCK,
+      startBlock: FACTORY_START_BLOCKS.auction,
+    },
+
+    /**
+     * ATP Factory - Employee contract
+     * Issues MATPs to employees
+     */
+    ATPFactoryEmployee: {
+      chain: config.networkName,
+      abi: ATP_ABI,
+      address: config.ATP_FACTORY_EMPLOYEE_ADDRESS as `0x${string}`,
+      startBlock: FACTORY_START_BLOCKS.employee,
+    },
+
+    /**
+     * ATP Factory - Investor contract
+     * Issues LATPs and MATPs to investors
+     */
+    ATPFactoryInvestor: {
+      chain: config.networkName,
+      abi: ATP_ABI,
+      address: config.ATP_FACTORY_INVESTOR_ADDRESS as `0x${string}`,
+      startBlock: FACTORY_START_BLOCKS.investor,
     },
 
     /**
@@ -94,7 +124,7 @@ export default createConfig({
     /**
      * Dynamic ATP Contracts
      * Created by factory events, tracks operator updates
-     * Uses factory pattern to only index ATPs created by our factories
+     * Uses factory pattern to only index ATPs created by all 4 factories
      */
     ATP: {
       chain: config.networkName,
@@ -103,11 +133,14 @@ export default createConfig({
         address: [
           config.ATP_FACTORY_ADDRESS as `0x${string}`,
           config.ATP_FACTORY_AUCTION_ADDRESS as `0x${string}`,
+          config.ATP_FACTORY_EMPLOYEE_ADDRESS as `0x${string}`,
+          config.ATP_FACTORY_INVESTOR_ADDRESS as `0x${string}`,
         ],
         event: ATPCreatedEvent,
         parameter: "atp",
       }),
-      startBlock: config.START_BLOCK,
+      // Use earliest factory start block to capture all ATP contracts
+      startBlock: Math.min(...Object.values(FACTORY_START_BLOCKS)),
     },
 
     /**

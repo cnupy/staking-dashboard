@@ -32,6 +32,10 @@ interface ATPDetailsDelegationItemProps {
     providerRewardsRecipient: string
   }) => void
   onWithdrawSuccess?: () => void
+  // ATP context for milestone validation
+  atpType?: string
+  registryAddress?: Address
+  milestoneId?: bigint
 }
 
 /**
@@ -45,7 +49,10 @@ export const ATPDetailsDelegationItem = ({
   stakerAddress,
   rollupVersion,
   onClaimClick,
-  onWithdrawSuccess
+  onWithdrawSuccess,
+  atpType,
+  registryAddress,
+  milestoneId
 }: ATPDetailsDelegationItemProps) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const { symbol, decimals } = useStakingAssetTokenDetails()
@@ -488,6 +495,9 @@ export const ATPDetailsDelegationItem = ({
                       refetchStatus()
                       onWithdrawSuccess?.()
                     }}
+                    atpType={atpType}
+                    registryAddress={registryAddress}
+                    milestoneId={milestoneId}
                   />
                 )}
               </>

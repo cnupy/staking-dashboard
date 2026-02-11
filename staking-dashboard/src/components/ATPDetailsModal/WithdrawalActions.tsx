@@ -6,6 +6,7 @@ import { TooltipIcon } from "@/components/Tooltip";
 import { SequencerStatus } from "@/hooks/rollup/useSequencerStatus";
 import { useAlert } from "@/contexts/AlertContext";
 import { getUnlockTimeDisplay } from "@/utils/dateFormatters";
+import { MilestoneStatusBadge } from "@/components/MilestoneStatusBadge";
 
 /**
  * Parse contract errors to extract user-friendly messages
@@ -79,6 +80,10 @@ interface WithdrawalActionsProps {
   actualUnlockTime?: bigint;
   withdrawalDelayDays?: number;
   onSuccess?: () => void;
+  // ATP context for milestone validation
+  atpType?: string;
+  registryAddress?: Address;
+  milestoneId?: bigint;
 }
 
 /**
@@ -94,6 +99,10 @@ export const WithdrawalActions = ({
   actualUnlockTime,
   withdrawalDelayDays,
   onSuccess,
+  // ATP context
+  atpType,
+  registryAddress,
+  milestoneId,
 }: WithdrawalActionsProps) => {
   const { showAlert } = useAlert();
   const isExiting = status === SequencerStatus.EXITING;
@@ -104,7 +113,15 @@ export const WithdrawalActions = ({
     isConfirming: isConfirmingInitiate,
     isSuccess: isInitiateSuccess,
     error: initiateError,
-  } = useInitiateWithdraw(stakerAddress);
+    milestoneStatus,
+    isMilestoneLoading,
+    canWithdraw,
+    milestoneBlockError,
+  } = useInitiateWithdraw(stakerAddress, {
+    registryAddress,
+    milestoneId,
+    atpType,
+  });
 
   const {
     finalizeWithdraw,
@@ -114,8 +131,17 @@ export const WithdrawalActions = ({
     error: finalizeError,
   } = useFinalizeWithdraw();
 
+  // Determine if milestone gates operations
+  const isMATP = atpType === 'MATP';
+  const isMilestoneGated = isMATP && !canWithdraw;
+
   const canInitiateUnstake =
-    status === SequencerStatus.VALIDATING || status === SequencerStatus.ZOMBIE;
+    (status === SequencerStatus.VALIDATING || status === SequencerStatus.ZOMBIE)
+    && !isMilestoneGated;  // Block if milestone not succeeded
+
+  const canFinalizeWithdrawNow =
+    canFinalize
+    && !isMilestoneGated;  // Block if milestone not succeeded
 
   // Handle initiate withdraw errors
   useEffect(() => {
@@ -178,6 +204,25 @@ export const WithdrawalActions = ({
           maxWidth="max-w-md"
         />
       </div>
+
+      {/* Show milestone status for MATPs */}
+      {isMATP && (
+        <div className="mb-2">
+          <MilestoneStatusBadge
+            status={milestoneStatus}
+            isLoading={isMilestoneLoading}
+          />
+        </div>
+      )}
+
+      {/* Show milestone error message */}
+      {milestoneBlockError && (
+        <div className="mb-2 p-3 border border-vermillion/40 bg-vermillion/10 rounded">
+          <div className="text-xs text-vermillion">
+            {milestoneBlockError}
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <div className="flex-1">
           <button
@@ -185,9 +230,15 @@ export const WithdrawalActions = ({
             disabled={
               !canInitiateUnstake ||
               isInitiatingWithdraw ||
-              isConfirmingInitiate
+              isConfirmingInitiate ||
+              isMilestoneLoading
             }
             className="w-full bg-aqua text-ink py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-aqua/90 transition-all disabled:opacity-50 disabled:hover:bg-aqua"
+            title={
+              isMilestoneGated
+                ? milestoneBlockError || undefined
+                : undefined
+            }
           >
             {isInitiatingWithdraw
               ? "Confirming..."
@@ -210,9 +261,14 @@ export const WithdrawalActions = ({
           <button
             onClick={handleFinalizeWithdraw}
             disabled={
-              !canFinalize || isFinalizingWithdraw || isConfirmingFinalize
+              !canFinalizeWithdrawNow || isFinalizingWithdraw || isConfirmingFinalize
             }
             className="w-full bg-chartreuse text-ink py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-chartreuse/90 transition-all disabled:opacity-50 disabled:hover:bg-chartreuse"
+            title={
+              isMilestoneGated
+                ? milestoneBlockError || undefined
+                : undefined
+            }
           >
             {isFinalizingWithdraw
               ? "Confirming..."

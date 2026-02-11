@@ -56,6 +56,7 @@ export interface ATPPosition {
   allocation: string;
   type: string;
   stakerAddress: string;
+  factoryAddress: string; // Factory that created this ATP
   sequentialNumber: number;
   timestamp: number;
   totalWithdrawn?: string;

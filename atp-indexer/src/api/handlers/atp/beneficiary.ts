@@ -144,6 +144,7 @@ export async function handleATPByBeneficiary(c: Context): Promise<Response> {
         allocation: pos.allocation.toString(),
         type: pos.type,
         stakerAddress: checksumAddress(pos.stakerAddress),
+        factoryAddress: checksumAddress(pos.factoryAddress),
         sequentialNumber: index + 1,
         timestamp: Number(pos.timestamp),
         totalWithdrawn: (withdrawalMap.get(normalizedAddress) ?? 0n).toString(),

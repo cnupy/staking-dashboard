@@ -15,6 +15,7 @@ export const atpPosition = onchainTable("atp_position", (t) => ({
   type: atpType("type").notNull(),
   stakerAddress: t.hex().notNull(),
   operatorAddress: t.hex(),
+  factoryAddress: t.hex().notNull(), // Factory that created this ATP
   blockNumber: t.bigint().notNull(),
   txHash: t.hex().notNull(),
   logIndex: t.integer().notNull(),
@@ -23,6 +24,7 @@ export const atpPosition = onchainTable("atp_position", (t) => ({
   addressIdx: index().on(table.address),
   beneficiaryIdx: index().on(table.beneficiary),
   stakerAddressIdx: index().on(table.stakerAddress),
+  factoryAddressIdx: index().on(table.factoryAddress),
 }));
 
 export const atpPositionRelations = relations(atpPosition, ({ many }) => ({

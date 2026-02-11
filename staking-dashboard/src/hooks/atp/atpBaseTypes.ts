@@ -36,6 +36,7 @@ export const BaseATPSchema = z.object({
   sequentialNumber: z.number().optional(),
   totalWithdrawn: z.bigint().optional(),
   totalSlashed: z.bigint().optional(),
+  factoryAddress: AddressSchema.optional(), // Factory that created this ATP
 });
 
 // Base ATP data type

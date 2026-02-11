@@ -9,6 +9,7 @@ export interface ATPHolding {
   allocation: string;
   beneficiary: string;
   stakerAddress: string;
+  factoryAddress: string; // Factory that created this ATP
   sequentialNumber: number;
   timestamp: number;
   totalWithdrawn: string;

@@ -1,20 +1,56 @@
 import { useWriteContract, useWaitForTransactionReceipt } from "@/hooks/useWagmiStrategy"
 import type { Address } from "viem"
 import { ATPWithdrawableStakerAbi } from "@/contracts/abis/ATPWithdrawableStaker"
+import {
+  useMilestoneStatus,
+  canWithdrawWithMilestone,
+  getMilestoneStatusText,
+} from "@/hooks/atpRegistry/useMilestoneStatus"
+
+interface UseInitiateWithdrawOptions {
+  registryAddress?: Address;
+  milestoneId?: bigint;
+  atpType?: string;
+}
 
 /**
  * Hook to initiate withdrawal from the rollup for a delegation
  * @param stakerAddress - Address of the withdrawable staker contract
+ * @param options - Optional milestone validation parameters
  * @returns Hook with initiateWithdraw function and transaction status
  */
-export function useInitiateWithdraw(stakerAddress: Address) {
-  const { data: hash, writeContract, isPending, error } = useWriteContract()
+export function useInitiateWithdraw(
+  stakerAddress: Address,
+  options?: UseInitiateWithdrawOptions
+) {
+  const { data: hash, writeContract, isPending, error: writeError } = useWriteContract()
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   })
 
+  // Check milestone status for MATPs
+  const {
+    status: milestoneStatus,
+    isLoading: isMilestoneLoading,
+    error: milestoneError,
+  } = useMilestoneStatus({
+    registryAddress: options?.registryAddress,
+    milestoneId: options?.milestoneId,
+    enabled: options?.atpType === 'MATP' && !!options?.registryAddress,
+  });
+
+  const isMATP = options?.atpType === 'MATP';
+  const canWithdraw = !isMATP || canWithdrawWithMilestone(milestoneStatus);
+
+  // Build error message if milestone blocks withdrawal
+  const milestoneBlockError = isMATP && !canWithdraw
+    ? `Cannot withdraw: milestone status is ${getMilestoneStatusText(milestoneStatus)}. ` +
+      `Withdrawals require milestone to be achieved (Succeeded status).`
+    : null;
+
   const initiateWithdraw = (version: bigint, attesterAddress: Address) => {
+    // Don't throw - let UI handle via disabled state
     return writeContract({
       abi: ATPWithdrawableStakerAbi,
       address: stakerAddress,
@@ -28,7 +64,12 @@ export function useInitiateWithdraw(stakerAddress: Address) {
     isPending,
     isConfirming,
     isSuccess,
-    error,
+    error: writeError || milestoneError,
     hash,
+    // Milestone-specific state for UI
+    milestoneStatus,
+    isMilestoneLoading,
+    canWithdraw,
+    milestoneBlockError,  // Explicit error message for UI
   }
 }

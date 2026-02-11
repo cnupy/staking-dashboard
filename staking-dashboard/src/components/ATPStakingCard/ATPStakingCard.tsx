@@ -28,6 +28,9 @@ import {
   formatTokenAmountFull,
 } from "@/utils/atpFormatters";
 import type { ATPData } from "@/hooks/atp";
+import { isMATPData } from "@/hooks/atp/matp/matpTypes";
+import { useMilestoneStatus } from "@/hooks/atpRegistry/useMilestoneStatus";
+import { MilestoneStatusBadge } from "@/components/MilestoneStatusBadge";
 import { ERC20Abi } from "@/contracts/abis/ERC20";
 
 interface ATPStakingCardProps {
@@ -50,6 +53,17 @@ export const ATPStakingCard = ({
   const { addTransaction, checkTransactionInQueue, openCart, transactions } =
     useTransactionCart();
   const { refetchAtpData, refetchAtpHoldings } = useATP();
+
+  // Check if this is a MATP and get milestone status
+  const isMATP = isMATPData(data);
+  const {
+    status: milestoneStatus,
+    isLoading: isMilestoneLoading
+  } = useMilestoneStatus({
+    registryAddress: data.registry as Address,
+    milestoneId: isMATP ? data.milestoneId : undefined,
+    enabled: isMATP,
+  });
 
   // Check if NCATP needs setup (v0 staker or zero operator)
   const {
@@ -468,10 +482,14 @@ export const ATPStakingCard = ({
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         {/* Left: Title + Status */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <h3 className="font-md-thermochrome text-2xl font-medium text-chartreuse">
             Token Vault #{data.sequentialNumber || "?"}
           </h3>
+          {/* Factory badge - Hidden for now, uncomment to show factory source */}
+          {/* <span className="px-2 py-1 text-xs font-oracle-standard font-bold uppercase tracking-wider border bg-aqua/20 text-aqua border-aqua/40">
+            {getFactoryName(data.factoryAddress)}
+          </span> */}
           <span
             className={`px-2 py-1 text-xs font-oracle-standard font-bold uppercase tracking-wider border ${
               isFullyWithdrawn
@@ -483,6 +501,13 @@ export const ATPStakingCard = ({
           >
             {isFullyWithdrawn ? "WITHDRAWN" : isLocked ? "LOCKED" : "UNLOCKED"}
           </span>
+          {/* Milestone badge for MATPs */}
+          {isMATP && (
+            <MilestoneStatusBadge
+              status={milestoneStatus}
+              isLoading={isMilestoneLoading}
+            />
+          )}
           <TooltipIcon
             content="These tokens are locked in a Token Vault contract. Token Vaults are vesting contracts that release tokens according to predefined schedules or milestones."
             size="sm"
@@ -716,7 +741,7 @@ export const ATPStakingCard = ({
                         ? "Success!"
                         : isNCATP
                           ? "Withdraw Tokens"
-                          : "Unlock"}
+                          : "Withdraw"}
                 </button>
               </Tooltip>
             ) : (
@@ -724,7 +749,7 @@ export const ATPStakingCard = ({
                 onClick={claim}
                 className="font-oracle-standard font-bold text-xs uppercase tracking-wider px-2 py-1 transition-all flex-shrink-0 bg-chartreuse text-ink hover:bg-chartreuse/90"
               >
-                {isNCATP ? "Withdraw Tokens" : "Unlock"}
+                {isNCATP ? "Withdraw Tokens" : "Withdraw"}
               </button>
             )}
           </div>

@@ -74,6 +74,10 @@ get_contract_addresses() {
     ATP_REGISTRY_AUCTION_ADDRESS=$(cat $contract_addresses_file | jq -r '.atpRegistryAuction')
     ATP_FACTORY_AUCTION_ADDRESS=$(cat $contract_addresses_file | jq -r '.atpFactoryAuction')
 
+    # new factories
+    ATP_FACTORY_EMPLOYEE_ADDRESS=$(cat $contract_addresses_file | jq -r '.atpFactoryEmployee')
+    ATP_FACTORY_INVESTOR_ADDRESS=$(cat $contract_addresses_file | jq -r '.atpFactoryInvestor')
+
     # other
     STAKING_REGISTRY_ADDRESS=$(cat $contract_addresses_file | jq -r '.stakingRegistry')
     ROLLUP_ADDRESS=$(cat $contract_addresses_file | jq -r '.rollupAddress')
@@ -150,6 +154,8 @@ CHAIN_ID=${CHAIN_ID}
 # Contract addresses
 ATP_FACTORY_ADDRESS=${ATP_FACTORY_ADDRESS}
 ATP_FACTORY_AUCTION_ADDRESS=${ATP_FACTORY_AUCTION_ADDRESS}
+ATP_FACTORY_EMPLOYEE_ADDRESS=${ATP_FACTORY_EMPLOYEE_ADDRESS}
+ATP_FACTORY_INVESTOR_ADDRESS=${ATP_FACTORY_INVESTOR_ADDRESS}
 STAKING_REGISTRY_ADDRESS=${STAKING_REGISTRY_ADDRESS}
 ROLLUP_ADDRESS=${ROLLUP_ADDRESS}
 
@@ -187,6 +193,8 @@ CHAIN_ID=${CHAIN_ID}
 # Contract addresses
 ATP_FACTORY_ADDRESS=${ATP_FACTORY_ADDRESS}
 ATP_FACTORY_AUCTION_ADDRESS=${ATP_FACTORY_AUCTION_ADDRESS}
+ATP_FACTORY_EMPLOYEE_ADDRESS=${ATP_FACTORY_EMPLOYEE_ADDRESS}
+ATP_FACTORY_INVESTOR_ADDRESS=${ATP_FACTORY_INVESTOR_ADDRESS}
 STAKING_REGISTRY_ADDRESS=${STAKING_REGISTRY_ADDRESS}
 ROLLUP_ADDRESS=${ROLLUP_ADDRESS}
 
@@ -469,6 +477,7 @@ case $ACTION in
       echo ""
     echo "  Required contract address variables:"
     echo "    ATP_FACTORY_ADDRESS, ATP_FACTORY_AUCTION_ADDRESS"
+    echo "    ATP_FACTORY_EMPLOYEE_ADDRESS, ATP_FACTORY_INVESTOR_ADDRESS"
     echo "    ATP_REGISTRY_ADDRESS, ATP_REGISTRY_AUCTION_ADDRESS"
     echo "    STAKING_REGISTRY_ADDRESS, ROLLUP_ADDRESS"
     echo "    START_BLOCK (optional, defaults to 0)"

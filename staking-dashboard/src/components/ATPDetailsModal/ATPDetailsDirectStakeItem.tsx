@@ -26,13 +26,17 @@ interface ATPDetailsDirectStakeItemProps {
   atp: ATPData
   onClaimSuccess?: () => void
   onWithdrawSuccess?: () => void
+  // ATP context for milestone validation
+  atpType?: string
+  registryAddress?: Address
+  milestoneId?: bigint
 }
 
 /**
  * Individual self stake item component
  * Displays sequencer address, transaction info, and links to explorers
  */
-export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion, atp, onClaimSuccess, onWithdrawSuccess }: ATPDetailsDirectStakeItemProps) => {
+export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion, atp, onClaimSuccess, onWithdrawSuccess, atpType, registryAddress, milestoneId }: ATPDetailsDirectStakeItemProps) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false)
   const { symbol, decimals } = useStakingAssetTokenDetails()
@@ -393,6 +397,9 @@ export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion,
                       refetchStatus()
                       onWithdrawSuccess?.()
                     }}
+                    atpType={atpType}
+                    registryAddress={registryAddress}
+                    milestoneId={milestoneId}
                   />
                 )}
               </>

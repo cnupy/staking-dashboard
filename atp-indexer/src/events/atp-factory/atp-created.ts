@@ -62,6 +62,7 @@ async function handleATPCreated({ event, context }: IndexingFunctionArgs<'ATPFac
 
   const atpType = await determineATPType(atp, client);
   const stakerAddress = await getStakerAddress(atp, client);
+  const factoryAddress = event.log.address; // Factory contract that emitted the event
 
   await db.insert(atpPosition).values({
     id: normalizeAddress(atp),
@@ -71,19 +72,28 @@ async function handleATPCreated({ event, context }: IndexingFunctionArgs<'ATPFac
     type: atpType,
     stakerAddress: normalizeAddress(stakerAddress) as `0x${string}`,
     operatorAddress: null,
+    factoryAddress: normalizeAddress(factoryAddress) as `0x${string}`,
     blockNumber: event.block.number,
     txHash: event.transaction.hash,
     logIndex: event.log.logIndex,
     timestamp: event.block.timestamp,
   })
 
-  console.log(`${atpType} created (${source}): ${atp}`);
+  console.log(`${atpType} created (${source}): ${atp} from factory ${factoryAddress}`);
 }
 
 ponder.on("ATPFactory:ATPCreated", async (params) => {
-  await handleATPCreated(params, "factory");
+  await handleATPCreated(params, "genesis");
 });
 
 ponder.on("ATPFactoryAuction:ATPCreated", async (params) => {
   await handleATPCreated(params, "auction");
+});
+
+ponder.on("ATPFactoryEmployee:ATPCreated", async (params) => {
+  await handleATPCreated(params, "employee");
+});
+
+ponder.on("ATPFactoryInvestor:ATPCreated", async (params) => {
+  await handleATPCreated(params, "investor");
 });

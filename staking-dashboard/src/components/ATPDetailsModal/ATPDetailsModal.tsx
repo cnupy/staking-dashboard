@@ -22,6 +22,7 @@ import { ClaimAllProvider } from "@/contexts/ClaimAllContext"
 import { ClaimAllDelegationRewardsButton } from "@/components/ClaimAllDelegationRewardsButton"
 import { ClaimDelegationRewardsModal, type DelegationModalData } from "@/components/ClaimDelegationRewardsModal"
 import type { ATPData } from "@/hooks/atp"
+import { isMATPData } from "@/hooks/atp/matp/matpTypes"
 import type { Address } from "viem"
 
 interface ATPDetailsModalProps {
@@ -263,6 +264,11 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
 
   const { messages: alertMessages, type: alertType } = alertData
 
+  // Extract ATP context for milestone validation
+  const atpType = atp.typeString; // "MATP", "LATP", "NCATP"
+  const registryAddress = atp.registry as Address;
+  const milestoneId = isMATPData(atp) ? atp.milestoneId : undefined;
+
   return createPortal(
     <ClaimAllProvider>
       <div
@@ -368,6 +374,9 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                         rollupVersion={rollupVersion}
                         atp={atp}
                         onWithdrawSuccess={handleWithdrawSuccess}
+                        atpType={atpType}
+                        registryAddress={registryAddress}
+                        milestoneId={milestoneId}
                       />
                     ))}
                   </div>
@@ -458,6 +467,9 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                         rollupVersion={rollupVersion}
                         onClaimClick={handleDelegationClaimClick}
                         onWithdrawSuccess={handleWithdrawSuccess}
+                        atpType={atpType}
+                        registryAddress={registryAddress}
+                        milestoneId={milestoneId}
                       />
                     ))}
                   </div>

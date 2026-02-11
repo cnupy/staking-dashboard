@@ -62,14 +62,14 @@ function buildAtpData(
 
   if (holding.type === 'MATP') {
     const data = buildMATPData(address, results);
-    return { ...data, sequentialNumber: holding.sequentialNumber, totalWithdrawn, totalSlashed };
+    return { ...data, sequentialNumber: holding.sequentialNumber, totalWithdrawn, totalSlashed, factoryAddress: holding.factoryAddress as `0x${string}` };
   }
 
   if (holding.type === 'LATP') {
     // Not overriding the global lock because the ATPRegistryAuction global lock params already returns the correct timestamp
     // https://etherscan.io/address/0x63841bAD6B35b6419e15cA9bBBbDf446D4dC3dde#readContract
     const data = buildLATPData(address, results);
-    return { ...data, sequentialNumber: holding.sequentialNumber, totalWithdrawn, totalSlashed };
+    return { ...data, sequentialNumber: holding.sequentialNumber, totalWithdrawn, totalSlashed, factoryAddress: holding.factoryAddress as `0x${string}` };
   }
 
   if (holding.type === 'NCATP') {
@@ -82,7 +82,7 @@ function buildAtpData(
       withdrawalTimestamp: overrides?.withdrawalTimestamp,
       hasStaked: overrides?.hasStaked
     });
-    return { ...data, sequentialNumber: holding.sequentialNumber, totalWithdrawn, totalSlashed };
+    return { ...data, sequentialNumber: holding.sequentialNumber, totalWithdrawn, totalSlashed, factoryAddress: holding.factoryAddress as `0x${string}` };
   }
 
   // Unknown type fallback
@@ -103,6 +103,7 @@ function buildAtpData(
     sequentialNumber: holding.sequentialNumber,
     totalWithdrawn,
     totalSlashed,
+    factoryAddress: holding.factoryAddress as `0x${string}`,
   } as ATPData;
 }
 
