@@ -74,7 +74,9 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
     // Calculate ERC20 direct deposits (not tracked separately, derived from deposit table)
     // ERC20 direct deposits = Total deposits - ATP delegations - ERC20 delegations - ATP direct stakes
     // Note: This only counts activated validators, not those still in queue
-    const erc20DirectDepositsRaw = totalDepositsCount - atpDelegationsCount - erc20DelegationsCount - directStakesCount;
+    // Note: Failed deposits are tracked in stakedWithProvider/staked tables but NOT in deposit table,
+    // so we add failedDepositsLength to balance the equation
+    const erc20DirectDepositsRaw = totalDepositsCount + failedDepositsLength - atpDelegationsCount - erc20DelegationsCount - directStakesCount;
 
     // Guard against negative values during re-indexing or data inconsistencies
     if (erc20DirectDepositsRaw < 0) {
@@ -83,11 +85,12 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
         timestamp: new Date().toISOString(),
         breakdown: {
           totalDepositsCount,
+          failedDepositsLength,
           atpDelegationsCount,
           erc20DelegationsCount,
           directStakesCount,
         },
-        calculation: `${totalDepositsCount} - ${atpDelegationsCount} - ${erc20DelegationsCount} - ${directStakesCount} = ${erc20DirectDepositsRaw}`,
+        calculation: `${totalDepositsCount} + ${failedDepositsLength} - ${atpDelegationsCount} - ${erc20DelegationsCount} - ${directStakesCount} = ${erc20DirectDepositsRaw}`,
         note: 'ERC20 direct stakes are derived by subtraction. Negative value indicates event handler inconsistencies or re-indexing issues.'
       });
     }
