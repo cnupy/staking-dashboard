@@ -79,7 +79,8 @@ export const ATPStakingOverview = ({ atpData, walletBalance = 0n }: ATPStakingOv
   const totalAtpClaimable = atpData.reduce((sum, atp) => {
     const remainingAllocation = (atp.allocation || 0n) - (atp.totalWithdrawn || 0n)
     if (remainingAllocation <= 0n) return sum
-    return sum + (atp.claimable || 0n)
+    const claimable = atp.claimable || 0n
+    return sum + (claimable > remainingAllocation ? remainingAllocation : claimable)
   }, 0n)
   // Claimable/available includes ATP claimable + ERC20 wallet balance (available to use)
   const totalClaimable = totalAtpClaimable + walletBalance
