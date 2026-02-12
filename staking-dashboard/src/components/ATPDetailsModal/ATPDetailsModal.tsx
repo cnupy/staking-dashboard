@@ -6,7 +6,7 @@ import { useStakeableAmount } from "@/hooks/atp/useStakeableAmount"
 import { useRollupData } from "@/hooks/rollup/useRollupData"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { useATP } from "@/hooks/useATP"
-import { useUserGovernancePower } from "@/hooks/governance"
+import { useUserGovernancePower, usePendingWithdrawals } from "@/hooks/governance"
 import { formatTokenAmount } from "@/utils/atpFormatters"
 import { Icon } from "@/components/Icon"
 import { ATPDetailsHeader } from "./ATPDetailsHeader"
@@ -125,11 +125,20 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
     stakerAddress: atp.staker
   })
 
+  // Get pending governance withdrawals for this ATP (initiated but not yet finalized)
+  const { pendingWithdrawals: governancePendingWithdrawals, refetch: refetchGovernancePendingWithdrawals } = usePendingWithdrawals({
+    userAddress: atp.atpAddress,
+  })
+  const pendingGovernanceAmount = governancePendingWithdrawals.reduce(
+    (sum, w) => sum + w.amount, 0n
+  )
+
   // Combined refetch handler for withdraw success - updates all relevant data sources
   const handleWithdrawSuccess = useCallback(() => {
     // Immediate refetches for blockchain data
     refetchStakeable()       // Refetch vault balance from blockchain (Available to Stake)
     refetchGovernancePower() // Refetch governance voting power
+    refetchGovernancePendingWithdrawals() // Refetch pending governance withdrawals
     onWithdrawSuccess?.()    // Notify parent to refetch stakeable amounts (Overview)
     onRefetchAllowance?.()   // Refetch allowance to update needsApproval state
 
@@ -146,7 +155,7 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
       onWithdrawSuccess?.()  // Also refetch after delay for updated data
       onRefetchAllowance?.() // Also refetch allowance after delay
     }, 3000)
-  }, [refetchATPDetails, refetchStakeable, refetchGovernancePower, refetchAtpHoldings, refetchAtpData, onWithdrawSuccess, onRefetchAllowance])
+  }, [refetchATPDetails, refetchStakeable, refetchGovernancePower, refetchGovernancePendingWithdrawals, refetchAtpHoldings, refetchAtpData, onWithdrawSuccess, onRefetchAllowance])
 
   // Filter non-failed delegations for rewards calculation
   const nonFailedDelegations = atpDetails && (atpDetails.delegations).filter(d => !d.hasFailedDeposit) || []
@@ -289,6 +298,7 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
               delegationRewards={stakingData.delegationRewards}
               stakeableAmount={stakeableAmount}
               governancePower={governanceVotingPower.stakerPowers[0]?.power ?? 0n}
+              pendingGovernanceWithdrawals={pendingGovernanceAmount}
             />
 
             {/* Staker Balance - only show if balance > 0 */}

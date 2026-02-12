@@ -9,6 +9,7 @@ interface ATPDetailsSummaryProps {
   delegationRewards: bigint
   stakeableAmount?: bigint
   governancePower?: bigint
+  pendingGovernanceWithdrawals?: bigint
 }
 
 /**
@@ -20,7 +21,8 @@ export const ATPDetailsSummary = ({
   totalStaked,
   delegationRewards,
   stakeableAmount,
-  governancePower
+  governancePower,
+  pendingGovernanceWithdrawals
 }: ATPDetailsSummaryProps) => {
   const { symbol, decimals, isLoading: isLoadingTokenDetails } = useStakingAssetTokenDetails()
 
@@ -74,14 +76,26 @@ export const ATPDetailsSummary = ({
           <div className="flex items-center gap-1 mb-1">
             <div className="text-xs text-parchment/60 uppercase tracking-wide">Allocated to Governance</div>
             <TooltipIcon
-              content="Amount of tokens from this Token Vault currently allocated to governance voting power."
+              content="Total tokens in governance: active voting power plus any pending withdrawals that haven't been finalized yet."
               size="sm"
               maxWidth="max-w-xs"
             />
           </div>
           <div className="font-mono text-base font-bold text-parchment">
-            {isLoadingTokenDetails ? "Loading..." : formatTokenAmount(governancePower ?? 0n, decimals, symbol)}
+            {isLoadingTokenDetails ? "Loading..." : formatTokenAmount((governancePower ?? 0n) + (pendingGovernanceWithdrawals ?? 0n), decimals, symbol)}
           </div>
+          {(pendingGovernanceWithdrawals ?? 0n) > 0n && !isLoadingTokenDetails && (
+            <div className="flex flex-col gap-0.5 mt-1">
+              <div className="text-[10px] text-parchment/40 font-mono">
+                <span className="text-parchment/60">Active:</span>{" "}
+                {formatTokenAmount(governancePower ?? 0n, decimals, symbol)}
+              </div>
+              <div className="text-[10px] text-parchment/40 font-mono">
+                <span className="text-amber-400/70">Withdrawing:</span>{" "}
+                {formatTokenAmount(pendingGovernanceWithdrawals ?? 0n, decimals, symbol)}
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <div className="flex items-center gap-1 mb-1">
