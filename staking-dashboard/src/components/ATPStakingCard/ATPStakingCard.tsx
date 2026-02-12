@@ -244,8 +244,28 @@ export const ATPStakingCard = ({
     onClaimSuccess,
   ]);
 
-  // For NCATP: must be operator AND hasStaked AND past withdrawal timestamp
-  const canClaimNCATP = !isNCATP || (isOperator && hasStaked && canWithdraw);
+  // Calculate remaining allocation after withdrawals and slashing
+  // Total Funds = allocation - totalWithdrawn - totalSlashed
+  // Slashed tokens are burned/confiscated and should not appear as remaining funds
+  const totalWithdrawn = data.totalWithdrawn || 0n;
+  const totalSlashed = data.totalSlashed || 0n;
+  let remainingAllocation =
+    (data.allocation || 0n) - totalWithdrawn - totalSlashed;
+  if (remainingAllocation < 0n && (totalWithdrawn > 0n || totalSlashed > 0n)) {
+    console.error(
+      `Data integrity issue: totalWithdrawn (${totalWithdrawn}) + totalSlashed (${totalSlashed}) exceeds allocation (${data.allocation}) for ATP ${data.atpAddress}. ` +
+        `This indicates a problem with the indexer or smart contract.`
+    );
+    // Clamp to 0 to prevent negative display values
+    remainingAllocation = 0n;
+  }
+  const isFullyWithdrawn =
+    remainingAllocation <= 0n && (totalWithdrawn > 0n || totalSlashed > 0n);
+
+  // For NCATP below activation threshold, staking is not possible so it should not be required for withdrawal
+  const isBelowThreshold = isNCATP && !!activationThreshold && remainingAllocation < activationThreshold;
+  // For NCATP: must be operator AND past withdrawal timestamp AND (hasStaked OR below threshold)
+  const canClaimNCATP = !isNCATP || (isOperator && (hasStaked || isBelowThreshold) && canWithdraw);
 
   // Calculate NCATP-specific unlock display
   // Uses blockTimestamp (same as canWithdraw) to ensure consistency between display and button state
@@ -262,8 +282,8 @@ export const ATPStakingCard = ({
       return "Set Staker Version";
     }
 
-    // If staker exists but hasn't staked yet
-    if (!hasStaked) {
+    // If staker exists but hasn't staked yet (only relevant above activation threshold)
+    if (!hasStaked && !isBelowThreshold) {
       return "Stake tokens first";
     }
 
@@ -291,24 +311,6 @@ export const ATPStakingCard = ({
   const timeToClaimDisplay = isNCATP
     ? getNCAtpUnlockDisplay()
     : globalLockTimeDisplay;
-
-  // Calculate remaining allocation after withdrawals and slashing
-  // Total Funds = allocation - totalWithdrawn - totalSlashed
-  // Slashed tokens are burned/confiscated and should not appear as remaining funds
-  const totalWithdrawn = data.totalWithdrawn || 0n;
-  const totalSlashed = data.totalSlashed || 0n;
-  let remainingAllocation =
-    (data.allocation || 0n) - totalWithdrawn - totalSlashed;
-  if (remainingAllocation < 0n && (totalWithdrawn > 0n || totalSlashed > 0n)) {
-    console.error(
-      `Data integrity issue: totalWithdrawn (${totalWithdrawn}) + totalSlashed (${totalSlashed}) exceeds allocation (${data.allocation}) for ATP ${data.atpAddress}. ` +
-        `This indicates a problem with the indexer or smart contract.`
-    );
-    // Clamp to 0 to prevent negative display values
-    remainingAllocation = 0n;
-  }
-  const isFullyWithdrawn =
-    remainingAllocation <= 0n && (totalWithdrawn > 0n || totalSlashed > 0n);
 
   // Don't allow claiming if fully withdrawn (no tokens left in vault)
   // For NCATP: use rawVaultBalance instead of data.claimable (reports wrong value after withdrawal)
@@ -350,7 +352,7 @@ export const ATPStakingCard = ({
       if (!isOperator) {
         return "Only the operator can unlock tokens from this Token Vault";
       }
-      if (!hasStaked) {
+      if (!hasStaked && !isBelowThreshold) {
         return "Must stake tokens first before unlocking";
       }
       if (!canWithdraw && withdrawalTimestamp) {
