@@ -3,7 +3,6 @@ import type { Address } from "viem"
 import { formatTokenAmount } from "@/utils/atpFormatters"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { useVestingCalculation } from "@/hooks/atp"
-import { isAuctionRegistry } from "@/hooks/atpRegistry"
 
 interface VestingGraphProps {
   globalLock: {
@@ -20,11 +19,8 @@ interface VestingGraphProps {
 /**
  * SVG vector graph showing cliff vesting pattern
  */
-export const VestingGraph = ({ globalLock, registryAddress, className = "" }: VestingGraphProps) => {
+export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) => {
   const { symbol, decimals } = useStakingAssetTokenDetails()
-
-  // Check if this is an ATP from auction registry
-  const isAuctionATP = isAuctionRegistry(registryAddress)
 
   // Check for invalid time range
   const hasInvalidTimeRange = Number(globalLock.endTime) < Number(globalLock.startTime)
