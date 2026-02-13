@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useAccount } from "wagmi"
 import { useClaimSplitRewards } from "@/hooks/splits/useClaimSplitRewards"
 import { useClaimSequencerRewards } from "@/hooks/rollup/useClaimSequencerRewards"
@@ -79,15 +79,25 @@ export const useClaimAllRewards = (): UseClaimAllRewardsReturn => {
   const currentSplitContract = currentTask?.type === 'delegation' ? currentTask.splitContract : undefined
   const currentCoinbase = currentTask?.type === 'coinbase' ? currentTask.coinbaseAddress : undefined
 
-  // Fetch balances for current task (for delegations)
+  // Fetch balances for current task (for delegations) - extract refetch functions
   const { warehouseAddress, isLoading: isLoadingWarehouse } = useSplitsWarehouse(currentSplitContract)
-  const { rewards: rollupBalance, isLoading: isLoadingRollup } = useSequencerRewards(currentSplitContract || currentCoinbase || '')
-  const { balance: splitContractBalance, isLoading: isLoadingSplitBalance } = useERC20Balance(tokenAddress, currentSplitContract)
-  const { balance: warehouseBalance, isLoading: isLoadingWarehouseBalance } = useWarehouseBalance(warehouseAddress, userAddress, tokenAddress)
+  const { rewards: rollupBalance, isLoading: isLoadingRollup, refetch: refetchRollup } = useSequencerRewards(currentSplitContract || currentCoinbase || '')
+  const { balance: splitContractBalance, isLoading: isLoadingSplitBalance, refetch: refetchSplitContract } = useERC20Balance(tokenAddress, currentSplitContract)
+  const { balance: warehouseBalance, isLoading: isLoadingWarehouseBalance, refetch: refetchWarehouse } = useWarehouseBalance(warehouseAddress, userAddress, tokenAddress)
 
   const isLoadingBalances = currentTask?.type === 'delegation'
     ? (isLoadingWarehouse || isLoadingRollup || isLoadingSplitBalance || isLoadingWarehouseBalance)
     : isLoadingRollup
+
+  // Memoize balances object to prevent effect re-runs on every render
+  const balances = useMemo(() => ({
+    rollupBalance,
+    splitContractBalance,
+    warehouseBalance,
+    refetchRollup,
+    refetchSplitContract,
+    refetchWarehouse
+  }), [rollupBalance, splitContractBalance, warehouseBalance, refetchRollup, refetchSplitContract, refetchWarehouse])
 
   // Use existing hooks for claiming
   const delegationClaimHook = useClaimSplitRewards(
@@ -95,11 +105,7 @@ export const useClaimAllRewards = (): UseClaimAllRewardsReturn => {
     currentTask?.splitData || { recipients: [], allocations: [], totalAllocation: 0n, distributionIncentive: 0 },
     tokenAddress,
     userAddress,
-    {
-      rollupBalance,
-      splitContractBalance,
-      warehouseBalance
-    }
+    balances
   )
 
   const coinbaseClaimHook = useClaimSequencerRewards()

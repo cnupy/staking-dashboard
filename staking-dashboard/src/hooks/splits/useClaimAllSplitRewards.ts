@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useAccount } from "wagmi"
 import { useClaimSplitRewards } from "./useClaimSplitRewards"
 import { useSequencerRewards } from "@/hooks/rollup/useSequencerRewards"
@@ -39,13 +39,23 @@ export const useClaimAllSplitRewards = () => {
   // Get token address for balance queries
   const { stakingAssetAddress: tokenAddress } = useStakingAssetTokenDetails()
 
-  // Fetch balances for current task
+  // Fetch balances for current task - extract refetch functions
   const { warehouseAddress, isLoading: isLoadingWarehouse } = useSplitsWarehouse(currentTask?.splitContract)
-  const { rewards: rollupBalance, isLoading: isLoadingRollupBalance } = useSequencerRewards(currentTask?.splitContract || '')
-  const { balance: splitContractBalance, isLoading: isLoadingSplitContractBalance } = useERC20Balance(tokenAddress, currentTask?.splitContract)
-  const { balance: warehouseBalance, isLoading: isLoadingWarehouseBalance } = useWarehouseBalance(warehouseAddress, beneficiary, tokenAddress)
+  const { rewards: rollupBalance, isLoading: isLoadingRollupBalance, refetch: refetchRollup } = useSequencerRewards(currentTask?.splitContract || '')
+  const { balance: splitContractBalance, isLoading: isLoadingSplitContractBalance, refetch: refetchSplitContract } = useERC20Balance(tokenAddress, currentTask?.splitContract)
+  const { balance: warehouseBalance, isLoading: isLoadingWarehouseBalance, refetch: refetchWarehouse } = useWarehouseBalance(warehouseAddress, beneficiary, tokenAddress)
 
   const isLoading = isLoadingWarehouse || isLoadingRollupBalance || isLoadingSplitContractBalance || isLoadingWarehouseBalance
+
+  // Memoize balances object to prevent effect re-runs on every render
+  const balances = useMemo(() => ({
+    rollupBalance,
+    splitContractBalance,
+    warehouseBalance,
+    refetchRollup,
+    refetchSplitContract,
+    refetchWarehouse
+  }), [rollupBalance, splitContractBalance, warehouseBalance, refetchRollup, refetchSplitContract, refetchWarehouse])
 
   // Use the single claim hook for the current task
   const claimHook = useClaimSplitRewards(
@@ -53,11 +63,7 @@ export const useClaimAllSplitRewards = () => {
     currentTask?.splitData || { recipients: [], allocations: [], totalAllocation: 0n, distributionIncentive: 0 },
     currentTask?.tokenAddress,
     currentTask?.userAddress,
-    {
-      rollupBalance,
-      splitContractBalance,
-      warehouseBalance
-    }
+    balances
   )
 
   // Monitor claim completion and move to next task

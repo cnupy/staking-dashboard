@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useMemo } from "react"
 import { useAccount } from "wagmi"
 import { useClaimSplitRewards } from "@/hooks/splits"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
@@ -33,11 +33,11 @@ export const ClaimDelegationRewardsButton = ({
   const { stakingAssetAddress: tokenAddress } = useStakingAssetTokenDetails()
   const { showAlert } = useAlert()
 
-  // Fetch balances for skip logic
+  // Fetch balances for skip logic - extract refetch functions
   const { warehouseAddress } = useSplitsWarehouse(splitContract)
-  const { rewards: rollupBalance } = useSequencerRewards(splitContract)
-  const { balance: splitContractBalance } = useERC20Balance(tokenAddress!, splitContract)
-  const { balance: warehouseBalance } = useWarehouseBalance(warehouseAddress, beneficiary, tokenAddress)
+  const { rewards: rollupBalance, refetch: refetchRollup } = useSequencerRewards(splitContract)
+  const { balance: splitContractBalance, refetch: refetchSplitContract } = useERC20Balance(tokenAddress!, splitContract)
+  const { balance: warehouseBalance, refetch: refetchWarehouse } = useWarehouseBalance(warehouseAddress, beneficiary, tokenAddress)
 
   // Calculate split allocations based on provider take rate
   const totalAllocation = 10000n
@@ -52,6 +52,16 @@ export const ClaimDelegationRewardsButton = ({
     distributionIncentive: 0
   }
 
+  // Memoize balances object to prevent effect re-runs on every render
+  const balances = useMemo(() => ({
+    rollupBalance,
+    splitContractBalance,
+    warehouseBalance,
+    refetchRollup,
+    refetchSplitContract,
+    refetchWarehouse
+  }), [rollupBalance, splitContractBalance, warehouseBalance, refetchRollup, refetchSplitContract, refetchWarehouse])
+
   const {
     claim,
     claimStep,
@@ -65,11 +75,7 @@ export const ClaimDelegationRewardsButton = ({
     splitData,
     tokenAddress!,
     beneficiary as Address,
-    {
-      rollupBalance,
-      splitContractBalance,
-      warehouseBalance
-    }
+    balances
   )
 
   // Call onSuccess callback when claim completes
@@ -79,12 +85,15 @@ export const ClaimDelegationRewardsButton = ({
     }
   }, [isSuccess, onSuccess])
 
-  // Handle errors
+  // Handle errors - show all errors, not just rejections
   useEffect(() => {
     if (error) {
       const errorMessage = error.message
       if (errorMessage.includes('User rejected') || errorMessage.includes('rejected')) {
         showAlert('warning', 'Transaction was cancelled')
+      } else {
+        // Show error for all other failures
+        showAlert('error', `Claim failed: ${errorMessage}`)
       }
     }
   }, [error, showAlert])

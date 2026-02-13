@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useDistributeRewards } from "./useDistributeRewards"
 import { useWithdrawRewards } from "./useWithdrawRewards"
 import { useSplitsWarehouse } from "./useSplitsWarehouse"
@@ -10,6 +10,9 @@ interface BalanceData {
   rollupBalance?: bigint
   splitContractBalance?: bigint
   warehouseBalance?: bigint
+  refetchRollup?: () => Promise<any>
+  refetchSplitContract?: () => Promise<any>
+  refetchWarehouse?: () => Promise<any>
 }
 
 type QueueStep = 'claiming' | 'distributing' | 'withdrawing'
@@ -31,6 +34,10 @@ export const useClaimSplitRewards = (
   const [skipMessage, setSkipMessage] = useState<string | null>(null)
   const [completedMessage, setCompletedMessage] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [refetchError, setRefetchError] = useState<Error | null>(null)
+
+  // Track which step is currently completing to prevent duplicate timeout scheduling
+  const completingStepRef = useRef<QueueStep | null>(null)
 
   // Get warehouse address from split contract
   const { warehouseAddress, isLoading: isLoadingWarehouse } = useSplitsWarehouse(splitContractAddress)
@@ -111,7 +118,7 @@ export const useClaimSplitRewards = (
     }
   }, [queue, balances])
 
-  // Handle transaction success - show completion message then remove from queue
+  // Handle transaction success - show completion message, refetch balances, then remove from queue
   useEffect(() => {
     if (!isProcessing || queue.length === 0) return
 
@@ -135,14 +142,60 @@ export const useClaimSplitRewards = (
     }
 
     if (stepCompleted && stepToRemove) {
+      // Guard: prevent duplicate timeout scheduling if already completing this step
+      if (completingStepRef.current === stepToRemove) return
+
+      completingStepRef.current = stepToRemove
       setCompletedMessage(message)
-      setTimeout(() => {
-        setCompletedMessage(null)
-        setIsProcessing(false)
-        setQueue(prev => prev.filter(step => step !== stepToRemove))
-      }, 1000)
+
+      // Determine which balances need refetching for the NEXT step
+      const refetchPromises: Promise<any>[] = []
+
+      if (stepToRemove === 'claiming') {
+        // Next step is 'distributing', which checks splitContractBalance
+        if (balances?.refetchSplitContract) {
+          refetchPromises.push(balances.refetchSplitContract())
+        }
+      } else if (stepToRemove === 'distributing') {
+        // Next step is 'withdrawing', which checks warehouseBalance (CRITICAL)
+        if (balances?.refetchWarehouse) {
+          refetchPromises.push(balances.refetchWarehouse())
+        }
+      }
+
+      // Wait for refetch to complete before advancing
+      if (refetchPromises.length > 0) {
+        Promise.all(refetchPromises)
+          .then(() => {
+            // Refetch succeeded - advance to next step after delay
+            setTimeout(() => {
+              setCompletedMessage(null)
+              setIsProcessing(false)
+              setQueue(prev => prev.filter(step => step !== stepToRemove))
+              completingStepRef.current = null // Clear ref after advancing
+            }, 500)
+          })
+          .catch(err => {
+            console.error('Balance refetch failed:', err)
+            // Treat refetch failure as an error - halt the flow completely
+            setRefetchError(err instanceof Error ? err : new Error('Balance refetch failed'))
+            setCompletedMessage(null)
+            setQueue([])
+            setClaimStep('idle')
+            setIsProcessing(false)
+            completingStepRef.current = null // Clear ref on error
+          })
+      } else {
+        // No refetch needed (e.g., last step) - advance immediately
+        setTimeout(() => {
+          setCompletedMessage(null)
+          setIsProcessing(false)
+          setQueue(prev => prev.filter(step => step !== stepToRemove))
+          completingStepRef.current = null // Clear ref after advancing
+        }, 500)
+      }
     }
-  }, [queue, claimHook.isSuccess, distributeHook.isSuccess, withdrawHook.isSuccess, isProcessing])
+  }, [queue, claimHook.isSuccess, distributeHook.isSuccess, withdrawHook.isSuccess, isProcessing, balances])
 
   // Handle errors - reset queue
   useEffect(() => {
@@ -151,6 +204,8 @@ export const useClaimSplitRewards = (
       setQueue([])
       setClaimStep('idle')
       setIsProcessing(false)
+      setRefetchError(null)
+      completingStepRef.current = null
       claimHook.reset()
       distributeHook.reset()
       withdrawHook.reset()
@@ -160,7 +215,9 @@ export const useClaimSplitRewards = (
   const claim = () => {
     if (!warehouseAddress) return
     setSkipMessage(null)
+    setRefetchError(null)
     setIsProcessing(false)
+    completingStepRef.current = null
     setQueue(['claiming', 'distributing', 'withdrawing'])
   }
 
@@ -176,8 +233,8 @@ export const useClaimSplitRewards = (
     isLoading: isLoadingWarehouse,
     isClaiming,
     isSuccess,
-    isError: claimHook.isError || distributeHook.isError || withdrawHook.isError,
-    error: claimHook.error || distributeHook.error || withdrawHook.error,
+    isError: claimHook.isError || distributeHook.isError || withdrawHook.isError || !!refetchError,
+    error: refetchError || claimHook.error || distributeHook.error || withdrawHook.error,
     claimTxHash: claimHook.txHash,
     distributeTxHash: distributeHook.txHash,
     withdrawTxHash: withdrawHook.txHash,
@@ -187,6 +244,8 @@ export const useClaimSplitRewards = (
       setSkipMessage(null)
       setCompletedMessage(null)
       setIsProcessing(false)
+      setRefetchError(null)
+      completingStepRef.current = null
       claimHook.reset()
       distributeHook.reset()
       withdrawHook.reset()
