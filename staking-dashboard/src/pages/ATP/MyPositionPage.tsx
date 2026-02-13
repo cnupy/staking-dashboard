@@ -201,7 +201,7 @@ export default function MyPositionPage() {
         )}
 
         {/* Progress bar - only show when user can stake */}
-        {canStake && (
+        {canStake ? (
           <div className="flex h-6 overflow-hidden border border-parchment/20 bg-parchment/5">
             {stakedPercent > 0 && (
               <div
@@ -224,7 +224,7 @@ export default function MyPositionPage() {
               </div>
             )}
           </div>
-        )}
+        ): null}
       </div>
 
       <PageHeader
