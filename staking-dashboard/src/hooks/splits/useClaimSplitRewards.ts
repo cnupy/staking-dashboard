@@ -157,7 +157,11 @@ export const useClaimSplitRewards = (
           refetchPromises.push(balances.refetchSplitContract())
         }
       } else if (stepToRemove === 'distributing') {
-        // Next step is 'withdrawing', which checks warehouseBalance (CRITICAL)
+        // After distributing, tokens move from split contract to warehouse
+        // Refetch BOTH balances to keep the UI accurate
+        if (balances?.refetchSplitContract) {
+          refetchPromises.push(balances.refetchSplitContract())
+        }
         if (balances?.refetchWarehouse) {
           refetchPromises.push(balances.refetchWarehouse())
         }
