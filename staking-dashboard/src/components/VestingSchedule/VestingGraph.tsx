@@ -165,23 +165,6 @@ export const VestingGraph = ({ globalLock, registryAddress, className = "" }: Ve
 
   return (
     <div className={`bg-gradient-to-br from-ink/40 to-ink/20 border border-parchment/10 rounded-lg p-6 ${className}`}>
-      {/* TGE Notice for Auction ATP */}
-      {isAuctionATP && (
-        <div className="mb-6 p-4 bg-chartreuse/10 border border-chartreuse/30 text-left">
-          <div className="text-sm text-parchment font-oracle-standard">
-            <strong className="text-chartreuse">TGE Notice:</strong> Tokens become available at TGE. TGE is decided by governance. Earliest anticipated in 90 days from start date. Latest is{' '}
-            <strong>
-              {new Date(Number(globalLock.endTime) * 1000).toLocaleDateString('en-US', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric'
-              })}
-            </strong>
-            {' '}as shown in the graph below.
-          </div>
-        </div>
-      )}
-
       <svg
         className="w-full h-full"
         viewBox={`0 0 ${graphData.width} ${graphData.height}`}
