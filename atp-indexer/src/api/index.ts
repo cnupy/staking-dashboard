@@ -6,6 +6,7 @@ import { healthRoutes } from './routes/health.routes';
 import { providerRoutes } from './routes/provider.routes';
 import { stakingRoutes } from './routes/staking.routes';
 import { atpRoutes } from './routes/atp.routes';
+import { syncStatusRoutes } from './routes/sync-status.routes';
 import { config } from '../config';
 
 /**
@@ -32,6 +33,7 @@ app.route('/api/health', healthRoutes);
 app.route('/api/providers', providerRoutes);
 app.route('/api/staking', stakingRoutes);
 app.route('/api/atp', atpRoutes);
+app.route('/api/sync-status', syncStatusRoutes);
 
 app.notFound((c) => {
   return c.json({ error: 'Not found' }, 404);

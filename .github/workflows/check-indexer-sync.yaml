@@ -1,0 +1,227 @@
+name: Check Indexer Sync & Switchover
+
+# Cron workflow that checks if a pending blue-green switchover is ready.
+# Runs every 30 minutes. When no switchover is pending, exits in <10s.
+# When a pending switchover's slave indexer reports synced:
+#   1. Updates the frontend CloudFront's indexer origin to point to the new live backend
+#   2. Updates the S3 deployment state
+#   3. Triggers a deploy of the old live backend (so both end up updated)
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Check specific environment only (leave empty for all)"
+        required: false
+        type: choice
+        options:
+          - ""
+          - testnet
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+  actions: write
+
+jobs:
+  check-and-switch:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [testnet, prod]
+    # For manual runs targeting a specific env, skip others
+    if: >-
+      github.event_name == 'schedule' ||
+      inputs.environment == '' ||
+      inputs.environment == matrix.environment
+    environment: ${{ matrix.environment }}
+    env:
+      STATE_BUCKET: aztec-token-sale-terraform-state
+      AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
+          role-session-name: ${{ github.run_id }}-${{ matrix.environment }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Read deployment state
+        id: state
+        run: |
+          STATE_KEY="deployment-state/${{ matrix.environment }}.json"
+
+          if ! aws s3 cp "s3://${STATE_BUCKET}/${STATE_KEY}" /tmp/deploy-state.json 2>/dev/null; then
+            echo "No deployment state for ${{ matrix.environment }}, skipping"
+            echo "has_pending=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PENDING=$(jq -r '.pending_switchover' /tmp/deploy-state.json)
+          if [ "$PENDING" = "null" ]; then
+            echo "No pending switchover for ${{ matrix.environment }}"
+            echo "has_pending=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "has_pending=true" >> $GITHUB_OUTPUT
+
+          TARGET_COLOR=$(jq -r '.pending_switchover.target_color' /tmp/deploy-state.json)
+          STARTED_AT=$(jq -r '.pending_switchover.started_at' /tmp/deploy-state.json)
+          LIVE_COLOR=$(jq -r '.live_color' /tmp/deploy-state.json)
+          TARGET_CF_DOMAIN=$(jq -r ".colors.${TARGET_COLOR}.cf_domain" /tmp/deploy-state.json)
+          FRONTEND_DIST_ID=$(jq -r '.frontend_distribution_id' /tmp/deploy-state.json)
+
+          echo "target_color=$TARGET_COLOR" >> $GITHUB_OUTPUT
+          echo "live_color=$LIVE_COLOR" >> $GITHUB_OUTPUT
+          echo "target_cf_domain=$TARGET_CF_DOMAIN" >> $GITHUB_OUTPUT
+          echo "frontend_dist_id=$FRONTEND_DIST_ID" >> $GITHUB_OUTPUT
+          echo "started_at=$STARTED_AT" >> $GITHUB_OUTPUT
+
+          echo "Pending switchover: $LIVE_COLOR → $TARGET_COLOR (since $STARTED_AT)"
+
+      - name: Check timeout (2 hours)
+        if: steps.state.outputs.has_pending == 'true'
+        id: timeout
+        run: |
+          STARTED_AT="${{ steps.state.outputs.started_at }}"
+          STARTED_EPOCH=$(date -d "$STARTED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$STARTED_AT" +%s)
+          NOW_EPOCH=$(date +%s)
+          ELAPSED=$(( NOW_EPOCH - STARTED_EPOCH ))
+          TIMEOUT=7200  # 2 hours
+
+          if [ "$ELAPSED" -gt "$TIMEOUT" ]; then
+            echo "::error::Switchover timed out after $(( ELAPSED / 60 )) minutes"
+            echo "timed_out=true" >> $GITHUB_OUTPUT
+
+            # Clear the pending switchover
+            jq '.pending_switchover = null' /tmp/deploy-state.json > /tmp/deploy-state-updated.json
+            aws s3 cp /tmp/deploy-state-updated.json \
+              "s3://${STATE_BUCKET}/deployment-state/${{ matrix.environment }}.json" \
+              --content-type "application/json"
+          else
+            echo "Elapsed: $(( ELAPSED / 60 )) minutes (timeout: $(( TIMEOUT / 60 )) minutes)"
+            echo "timed_out=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check slave sync status
+        if: steps.state.outputs.has_pending == 'true' && steps.timeout.outputs.timed_out == 'false'
+        id: sync
+        run: |
+          TARGET_CF_DOMAIN="${{ steps.state.outputs.target_cf_domain }}"
+          SYNC_URL="https://${TARGET_CF_DOMAIN}/api/sync-status"
+
+          echo "Checking sync status at: $SYNC_URL"
+
+          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 30 "$SYNC_URL" 2>/dev/null || echo -e "\n000")
+          HTTP_BODY=$(echo "$HTTP_RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n 1)
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Sync endpoint not ready (HTTP $HTTP_CODE)"
+            echo "is_synced=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          IS_SYNCED=$(echo "$HTTP_BODY" | jq -r '.synced')
+          BEHIND=$(echo "$HTTP_BODY" | jq -r '.behindBlocks')
+          HAS_DATA=$(echo "$HTTP_BODY" | jq -r '.hasData')
+
+          echo "Synced: $IS_SYNCED | Behind: $BEHIND blocks | Has data: $HAS_DATA"
+
+          if [ "$IS_SYNCED" = "true" ]; then
+            echo "is_synced=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_synced=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Switch frontend CloudFront indexer origin
+        if: steps.state.outputs.has_pending == 'true' && steps.timeout.outputs.timed_out == 'false' && steps.sync.outputs.is_synced == 'true'
+        run: |
+          FRONTEND_DIST_ID="${{ steps.state.outputs.frontend_dist_id }}"
+          NEW_ORIGIN="${{ steps.state.outputs.target_cf_domain }}"
+
+          echo "Switching indexer origin on frontend CloudFront $FRONTEND_DIST_ID to: $NEW_ORIGIN"
+
+          # Get current distribution config
+          aws cloudfront get-distribution-config --id "$FRONTEND_DIST_ID" --output json > /tmp/cf-config.json
+          ETAG=$(jq -r '.ETag' /tmp/cf-config.json)
+
+          # Update the "indexerOrigin" origin's domain name (not the S3 origin)
+          jq --arg domain "$NEW_ORIGIN" \
+            '(.DistributionConfig.Origins.Items[] | select(.Id == "indexerOrigin")).DomainName = $domain' \
+            /tmp/cf-config.json | jq '.DistributionConfig' > /tmp/cf-config-updated.json
+
+          # Apply the update
+          aws cloudfront update-distribution \
+            --id "$FRONTEND_DIST_ID" \
+            --distribution-config file:///tmp/cf-config-updated.json \
+            --if-match "$ETAG" \
+            --no-cli-pager
+
+          # Invalidate /api/* cache
+          aws cloudfront create-invalidation \
+            --distribution-id "$FRONTEND_DIST_ID" \
+            --paths "/api/*" \
+            --no-cli-pager
+
+          echo "Frontend CloudFront indexer origin updated and /api/* cache invalidated"
+
+      - name: Update deployment state
+        if: steps.state.outputs.has_pending == 'true' && steps.timeout.outputs.timed_out == 'false' && steps.sync.outputs.is_synced == 'true'
+        run: |
+          NEW_LIVE="${{ steps.state.outputs.target_color }}"
+
+          jq --arg live "$NEW_LIVE" \
+            '.live_color = $live | .pending_switchover = null' \
+            /tmp/deploy-state.json > /tmp/deploy-state-updated.json
+
+          echo "Updated state:"
+          cat /tmp/deploy-state-updated.json
+
+          aws s3 cp /tmp/deploy-state-updated.json \
+            "s3://${STATE_BUCKET}/deployment-state/${{ matrix.environment }}.json" \
+            --content-type "application/json"
+
+      - name: Trigger deploy to old live (now slave)
+        if: steps.state.outputs.has_pending == 'true' && steps.timeout.outputs.timed_out == 'false' && steps.sync.outputs.is_synced == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const oldLive = '${{ steps.state.outputs.live_color }}';
+            const env = '${{ matrix.environment }}';
+
+            console.log(`Triggering deploy to old live (${oldLive}) for ${env}`);
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'deploy-indexer.yaml',
+              ref: 'main',
+              inputs: {
+                environment: env,
+                green: oldLive === 'green' ? 'true' : 'false',
+                dry_run: 'false'
+              }
+            });
+
+            console.log(`Deploy triggered for ${env} ${oldLive}`);
+
+      - name: Write summary
+        if: steps.state.outputs.has_pending == 'true' && steps.timeout.outputs.timed_out == 'false' && steps.sync.outputs.is_synced == 'true'
+        run: |
+          echo "### Switchover Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ matrix.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **New live:** ${{ steps.state.outputs.target_color }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Old live (${{ steps.state.outputs.live_color }}):** deploy triggered to update" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend CloudFront:** ${{ steps.state.outputs.frontend_dist_id }}" >> $GITHUB_STEP_SUMMARY

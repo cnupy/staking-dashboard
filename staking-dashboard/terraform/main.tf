@@ -180,20 +180,107 @@ resource "aws_cloudfront_function" "basic_auth_staking_dashboard" {
   })
 }
 
+# CloudFront function for SPA routing — rewrites non-file URIs to /index.html.
+# This replaces the 404 custom_error_response so that API 404s pass through correctly
+# (custom_error_response is distribution-wide and would swallow API errors).
+resource "aws_cloudfront_function" "spa_routing" {
+  name    = "${var.env}-aztec-staking-dashboard-spa-routing"
+  runtime = "cloudfront-js-2.0"
+  comment = "SPA routing: rewrite non-file paths to /index.html"
+
+  code = <<-EOF
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+
+      // If the URI has a file extension (e.g. .js, .css, .png), serve it as-is.
+      // Otherwise rewrite to /index.html for SPA client-side routing.
+      if (!uri.includes('.')) {
+        request.uri = '/index.html';
+      }
+
+      return request;
+    }
+  EOF
+}
+
+# CORS response headers policy for the /api/* behavior
+resource "aws_cloudfront_response_headers_policy" "api_cors" {
+  name = "${var.env}-staking-dashboard-api-cors"
+
+  cors_config {
+    access_control_allow_credentials = false
+
+    access_control_allow_headers {
+      items = ["Content-Type", "Origin", "Accept", "X-Requested-With"]
+    }
+
+    access_control_allow_methods {
+      items = ["GET", "OPTIONS", "HEAD"]
+    }
+
+    access_control_allow_origins {
+      items = ["*"]
+    }
+
+    access_control_expose_headers {
+      items = ["Content-Type"]
+    }
+
+    access_control_max_age_sec = 86400
+    origin_override            = true
+  }
+}
+
 resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
   enabled             = true
   default_root_object = "index.html"
   web_acl_id          = module.website_waf.web_acl_arn
-  
+
   # Use custom domain with certificate
   aliases = var.env == "prod" ? ["stake.aztec.network"] : var.env == "testnet" ? ["testnet.stake.aztec.network"] : []
 
+  # Origin 1: S3 bucket for static frontend assets
   origin {
     domain_name              = aws_s3_bucket.staking_dashboard_bucket.bucket_regional_domain_name
     origin_id                = "stakingDashboardS3Origin"
     origin_access_control_id = aws_cloudfront_origin_access_control.oac-staking-dashboard.id
   }
 
+  # Origin 2: Live indexer CloudFront (proxied for /api/* requests).
+  # The blue-green cron workflow updates this origin's domain via AWS CLI
+  # when switching between red/green indexers.
+  origin {
+    domain_name = local.atp_indexer_cf_domain
+    origin_id   = "indexerOrigin"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # /api/* requests → indexer origin
+  ordered_cache_behavior {
+    path_pattern     = "/api/*"
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id = "indexerOrigin"
+
+    viewer_protocol_policy = "redirect-to-https"
+
+    # CachingDisabled — the per-color indexer CloudFront handles caching
+    cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+
+    # AllViewer — forward all headers to origin
+    origin_request_policy_id = "216adef6-5c7f-47e4-b989-5492eafa07d3"
+
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.api_cors.id
+  }
+
+  # Default: S3 static frontend assets
   default_cache_behavior {
     allowed_methods            = ["GET", "HEAD", "OPTIONS"]
     cached_methods             = ["GET", "HEAD"]
@@ -208,10 +295,17 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
         forward = "none"
       }
     }
-    
+
+    # SPA routing: rewrite non-file paths to /index.html so client-side
+    # routing works on page refresh. This replaces the old 404 custom_error_response
+    # which was distribution-wide and would have swallowed API 404s.
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_routing.arn
+    }
   }
 
-  # Redirect to blocked.html for 403 errors
+  # Redirect to blocked.html for 403 errors (geo-blocking)
   custom_error_response {
     error_code            = 403
     response_code         = 403
@@ -219,14 +313,9 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
     error_caching_min_ttl = 0
   }
 
-  # Redirect to index.html for 404 errors
-  # This is to handle the case where the user is on a route and refreshes the page
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
+  # NOTE: The 404 custom_error_response was removed because it's distribution-wide
+  # and would intercept API 404s (returning index.html instead of JSON errors).
+  # SPA routing is now handled by the spa_routing CloudFront Function above.
 
   restrictions {
     geo_restriction {
@@ -249,6 +338,13 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
       include_cookies = false
       prefix          = "frontend/staking-dashboard/"
     }
+  }
+
+  # The indexer origin domain is updated by the blue-green cron via AWS CLI.
+  # Ignore origin changes so Terraform doesn't revert the switchover.
+  # The S3 origin never changes so this is safe.
+  lifecycle {
+    ignore_changes = [origin]
   }
 }
 

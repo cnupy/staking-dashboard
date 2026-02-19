@@ -20,6 +20,7 @@ data "terraform_remote_state" "shared" {
 # Local references to backend service URLs
 locals {
   atp_indexer_url         = "https://${data.terraform_remote_state.atp-indexer.outputs.cf_domain_name}"
+  atp_indexer_cf_domain   = data.terraform_remote_state.atp-indexer.outputs.cf_domain_name
   cloudfront_logs_bucket  = try(data.terraform_remote_state.shared.outputs.cloudfront_logs_bucket_domain_name, "")
 }
 

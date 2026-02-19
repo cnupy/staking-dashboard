@@ -93,23 +93,20 @@ function update_env_file() {
 
   if [ -z "${VITE_API_HOST:-}" ]; then
     log_step "Updating VITE_API_HOST"
-    if [ "$environment" = "staging" ]; then
+    if [ "$environment" = "prod" ]; then
+      # Same-domain API — /api/* is routed to the live indexer by CloudFront.
+      # No need to distinguish red/green; the blue-green cron handles origin switching.
+      VITE_API_HOST="https://stake.aztec.network"
+    elif [ "$environment" = "testnet" ]; then
+      # Same-domain API for testnet
+      VITE_API_HOST="https://testnet.stake.aztec.network"
+    elif [ "$environment" = "staging" ]; then
       if [ "$green" = "green" ]; then
-        # staging green deployment
         VITE_API_HOST="https://d1lzkj24db7400.cloudfront.net"
       else
-        # staging red deployment
         VITE_API_HOST="https://d24imfdgeak2db.cloudfront.net"
       fi
-    elif [ "$environment" = "prod" ]; then
-      if [ "$green" = "green" ]; then
-        # prod green deployment
-        VITE_API_HOST="https://dgk9duhuxabbq.cloudfront.net"
-      else
-        # prod red deployment
-        VITE_API_HOST="https://d10cun7h2qqnvc.cloudfront.net"
-      fi
-    else 
+    else
       VITE_API_HOST="http://localhost:42068"
     fi
   fi

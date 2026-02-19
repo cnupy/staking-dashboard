@@ -1,0 +1,176 @@
+name: Deploy Indexer (Blue-Green)
+
+# Automated blue-green deployment for the ATP indexer.
+# Reads deployment state from S3 to determine which color is the slave,
+# deploys the indexer to the slave, and marks a switchover as pending.
+# The check-indexer-sync.yaml cron workflow handles the actual switchover
+# once the slave finishes re-indexing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy to"
+        required: true
+        default: "testnet"
+        type: choice
+        options:
+          - testnet
+          - prod
+      dry_run:
+        description: "Whether to run a dry run (plan only)"
+        required: false
+        default: false
+        type: boolean
+      force:
+        description: "Force deploy even if a switchover is already pending"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+jobs:
+  deploy-to-slave:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      ENV: ${{ inputs.environment }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      FORCE: ${{ inputs.force }}
+
+      # AWS Configuration
+      AWS_ACCOUNT: ${{ secrets.AWS_ACCOUNT }}
+      AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      # Network Configuration
+      RPC_URL: ${{ secrets.RPC_URL }}
+      CHAIN_ID: ${{ vars.CHAIN_ID }}
+      SEPOLIA_RPC_URL: ${{ secrets.RPC_URL }}
+      TESTNET_RPC_URL: ${{ secrets.RPC_URL }}
+
+      # Contract Addresses (from GitHub environment variables)
+      ATP_FACTORY_ADDRESS: ${{ vars.ATP_FACTORY_ADDRESS }}
+      ATP_FACTORY_AUCTION_ADDRESS: ${{ vars.ATP_FACTORY_AUCTION_ADDRESS }}
+      ATP_REGISTRY_ADDRESS: ${{ vars.ATP_REGISTRY_ADDRESS }}
+      ATP_REGISTRY_AUCTION_ADDRESS: ${{ vars.ATP_REGISTRY_AUCTION_ADDRESS }}
+      STAKING_REGISTRY_ADDRESS: ${{ vars.STAKING_REGISTRY_ADDRESS }}
+      ROLLUP_ADDRESS: ${{ vars.ROLLUP_ADDRESS }}
+      START_BLOCK: ${{ vars.ATP_FACTORY_DEPLOYMENT_BLOCK }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: atp-indexer/yarn.lock
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Mark repo as safe
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
+          role-session-name: ${{ github.run_id }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Read deployment state from S3
+        id: state
+        run: |
+          STATE_KEY="deployment-state/${{ inputs.environment }}.json"
+          STATE_BUCKET="aztec-token-sale-terraform-state"
+
+          if aws s3 cp "s3://${STATE_BUCKET}/${STATE_KEY}" /tmp/deploy-state.json 2>/dev/null; then
+            echo "Found existing deployment state"
+            cat /tmp/deploy-state.json
+
+            LIVE_COLOR=$(jq -r '.live_color' /tmp/deploy-state.json)
+            PENDING=$(jq -r '.pending_switchover' /tmp/deploy-state.json)
+
+            # Determine slave color
+            if [ "$LIVE_COLOR" = "red" ]; then
+              SLAVE_COLOR="green"
+            else
+              SLAVE_COLOR="red"
+            fi
+
+            echo "live_color=$LIVE_COLOR" >> $GITHUB_OUTPUT
+            echo "slave_color=$SLAVE_COLOR" >> $GITHUB_OUTPUT
+            echo "has_pending=$([ "$PENDING" != "null" ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          else
+            echo "::error::No deployment state found. Run scripts/init-deployment-state.sh first."
+            exit 1
+          fi
+
+      - name: Check for pending switchover
+        if: steps.state.outputs.has_pending == 'true' && inputs.force == false
+        run: |
+          echo "::error::A switchover is already pending. Use force=true to override."
+          echo "Current state:"
+          cat /tmp/deploy-state.json
+          exit 1
+
+      - name: Deploy indexer to slave (${{ steps.state.outputs.slave_color }})
+        working-directory: atp-indexer
+        run: |
+          SLAVE="${{ steps.state.outputs.slave_color }}"
+          echo "Deploying to ${{ inputs.environment }} ($SLAVE)"
+
+          if [ "${{ inputs.environment }}" = "testnet" ]; then
+            if [ "$SLAVE" = "green" ]; then
+              ./bootstrap.sh deploy-testnet-green
+            else
+              ./bootstrap.sh deploy-testnet
+            fi
+          elif [ "${{ inputs.environment }}" = "prod" ]; then
+            if [ "$SLAVE" = "green" ]; then
+              ./bootstrap.sh deploy-prod-green
+            else
+              ./bootstrap.sh deploy-prod
+            fi
+          fi
+
+      - name: Update deployment state with pending switchover
+        if: inputs.dry_run == false
+        run: |
+          SLAVE="${{ steps.state.outputs.slave_color }}"
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Update state with pending switchover
+          jq --arg target "$SLAVE" \
+             --arg started "$NOW" \
+             --arg sha "${{ github.sha }}" \
+             '.pending_switchover = { target_color: $target, started_at: $started, commit_sha: $sha }' \
+             /tmp/deploy-state.json > /tmp/deploy-state-updated.json
+
+          echo "Updated deployment state:"
+          cat /tmp/deploy-state-updated.json
+
+          aws s3 cp /tmp/deploy-state-updated.json \
+            "s3://aztec-token-sale-terraform-state/deployment-state/${{ inputs.environment }}.json" \
+            --content-type "application/json"
+
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed to:** $SLAVE (slave)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Live:** ${{ steps.state.outputs.live_color }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The check-indexer-sync cron will monitor and switch over once indexing completes." >> $GITHUB_STEP_SUMMARY
