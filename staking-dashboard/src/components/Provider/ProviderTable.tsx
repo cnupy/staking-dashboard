@@ -208,7 +208,7 @@ export const ProviderTable = ({
     setIsGroupExpanded(false)
   }, [topGroupSize])
 
-  const shouldShowGroup = topGroupSize > 0 && providers.length > topGroupSize
+  const shouldShowGroup = topGroupSize > 0 && providers.length > topGroupSize && !isGroupExpanded
   const groupProviders = shouldShowGroup ? providers.slice(0, topGroupSize) : []
   const restProviders = shouldShowGroup ? providers.slice(topGroupSize) : providers
   const shouldShowInlineBar =
@@ -388,7 +388,7 @@ export const ProviderTable = ({
                 {/* Collapsed / expanded toggle row */}
                 <TableRow
                   className="cursor-pointer select-none"
-                  onClick={() => setIsGroupExpanded((prev) => !prev)}
+                  onClick={() => setIsGroupExpanded(true)}
                 >
                   <TableCell>
                     <div className="flex items-center gap-3">
@@ -425,7 +425,7 @@ export const ProviderTable = ({
                       <Icon
                         name="chevronDown"
                         size="md"
-                        className={`text-parchment/50 transition-transform duration-200 ${isGroupExpanded ? 'rotate-180' : ''}`}
+                        className="text-parchment/50"
                       />
                     </div>
                   </TableCell>
@@ -484,15 +484,6 @@ export const ProviderTable = ({
                   <TableCell />
                 </TableRow>
 
-                {/* Expanded: individual rows for group members */}
-                {isGroupExpanded && groupProviders.map((provider) => (
-                  <ProviderRow
-                    key={provider.id}
-                    provider={provider}
-                    config={providerConfigurations?.get(Number(provider.id))}
-                    {...sharedRowProps}
-                  />
-                ))}
 
               </>
             )}
