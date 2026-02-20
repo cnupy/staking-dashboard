@@ -1,5 +1,7 @@
 {
   "atp-indexer": {
+    "dev": "atp-indexer-dev-v01",
+    "staging": "atp-indexer-staging-v01",
     "testnet": "atp-indexer-testnet-v03",
     "prod": "atp-indexer-prod-v14"
   }
