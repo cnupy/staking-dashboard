@@ -344,9 +344,13 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
   # The indexer origin domain is updated by the blue-green cron via AWS CLI.
   # Ignore origin changes so Terraform doesn't revert the switchover.
   # The S3 origin never changes so this is safe.
-  lifecycle {
-    ignore_changes = [origin]
-  }
+  #
+  # IMPORTANT: For the first deploy to a new environment, comment out the
+  # lifecycle block below so Terraform can create the indexerOrigin.
+  # After the first successful apply, uncomment it.
+  # lifecycle {
+  #   ignore_changes = [origin]
+  # }
 }
 
 #
