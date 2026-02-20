@@ -34,20 +34,32 @@ jobs:
     strategy:
       matrix:
         environment: [dev, staging, testnet, prod]
-    # For manual runs targeting a specific env, skip others
-    if: >-
-      github.event_name == 'schedule' ||
-      inputs.environment == '' ||
-      inputs.environment == matrix.environment
     environment: ${{ matrix.environment }}
     env:
       STATE_BUCKET: aztec-token-sale-terraform-state
       AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
 
     steps:
+      # For manual runs targeting a specific env, skip others
+      - name: Check if this environment is targeted
+        id: should-run
+        run: |
+          EVENT="${{ github.event_name }}"
+          TARGET="${{ inputs.environment }}"
+          CURRENT="${{ matrix.environment }}"
+
+          if [ "$EVENT" = "schedule" ] || [ -z "$TARGET" ] || [ "$TARGET" = "$CURRENT" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "Skipping $CURRENT (targeted: $TARGET)"
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.should-run.outputs.run == 'true'
 
       - name: Configure AWS credentials with GitHub OIDC
+        if: steps.should-run.outputs.run == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
@@ -55,6 +67,7 @@ jobs:
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
       - name: Read deployment state
+        if: steps.should-run.outputs.run == 'true'
         id: state
         run: |
           STATE_KEY="deployment-state/${{ matrix.environment }}.json"
