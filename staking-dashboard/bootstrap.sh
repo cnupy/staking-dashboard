@@ -97,15 +97,9 @@ function update_env_file() {
       # Same-domain API — /api/* is routed to the live indexer by CloudFront.
       # No need to distinguish red/green; the blue-green cron handles origin switching.
       VITE_API_HOST="https://stake.aztec.network"
-    elif [ "$environment" = "testnet" ]; then
-      # Same-domain API for testnet
-      VITE_API_HOST="https://testnet.stake.aztec.network"
-    elif [ "$environment" = "staging" ]; then
-      if [ "$green" = "green" ]; then
-        VITE_API_HOST="https://d1lzkj24db7400.cloudfront.net"
-      else
-        VITE_API_HOST="https://d24imfdgeak2db.cloudfront.net"
-      fi
+    elif [ "$environment" = "testnet" ] || [ "$environment" = "staging" ]; then
+      # Same-domain API for testnet/staging
+      VITE_API_HOST="https://${environment}.stake.aztec.network"
     else
       VITE_API_HOST="http://localhost:42068"
     fi
@@ -377,9 +371,7 @@ function deploy() {
     CHAIN_ID=11155111
     chain_environment="sepolia_testnet"
     VITE_EXPLORER_URL="https://sepolia.etherscan.io"
-  fi
-
-  if [ "$environment" = "prod" ]; then
+  elif [ "$environment" = "dev" ] || [ "$environment" = "staging" ] || [ "$environment" = "prod" ]; then
     if [ -z "${RPC_URL:-}" ]; then
       echo "Error: RPC_URL environment variable must be set"
       exit 1
@@ -412,11 +404,11 @@ function deploy() {
   export TF_VAR_basic_auth_pass="${BASIC_AUTH_PASSWORD:-}"
 
   # Set parent environment for shared infrastructure
-  # testnet uses dev shared infrastructure
-  if [ "$environment" = "testnet" ]; then
-    export TF_VAR_env_parent="dev"
+  # Only prod uses the prod cluster; dev, staging, and testnet use dev
+  if [ "$environment" = "prod" ]; then
+    export TF_VAR_env_parent="prod"
   else
-    export TF_VAR_env_parent="$environment"
+    export TF_VAR_env_parent="dev"
   fi
 
   if [ "${DRY_RUN:-false}" = "true" ]; then
@@ -436,19 +428,14 @@ function deploy() {
   # Apply the terraform configuration
   (cd terraform && terraform apply -auto-approve -var="indexer_deployment_suffix=$indexer_deployment_suffix")
 
-  # Get ATP indexer URL from terraform output, fallback to localhost if not available
-  ATP_INDEXER_URL=$(cd $WEBSITE_ROOT/terraform && terraform output -raw atp_indexer_url)
-
-  # TODO: Remove this.
-  # Use dev-tn indexer URL for dev environment. 
-  # This is because website for dev-tn cannot be deployed due to broken tfstate.
-  if [ "$environment" = "dev" ]; then
-    echo "WARNING:Using hardcoded dev-tn indexer URL"
-    ATP_INDEXER_URL="https://d1ibwybv6l4hzw.cloudfront.net"
+  # Same-domain API — /api/* is routed to the live indexer by CloudFront.
+  # No need to reference the indexer directly; the blue-green cron handles origin switching.
+  if [ "$environment" = "prod" ]; then
+    export VITE_API_HOST="https://stake.aztec.network"
+  else
+    export VITE_API_HOST="https://${environment}.stake.aztec.network"
   fi
-
-  echo "ATP_INDEXER_URL: $ATP_INDEXER_URL"
-  export VITE_API_HOST="$ATP_INDEXER_URL"
+  echo "VITE_API_HOST: $VITE_API_HOST"
   export VITE_CHAIN_ID=$CHAIN_ID
   export VITE_RPC_URL=$RPC_URL
 
@@ -492,6 +479,18 @@ case $ACTION in
       ;;
   build)
       build
+      ;;
+  deploy-dev)
+      deploy "dev"
+      ;;
+  deploy-dev-green)
+      deploy "dev" "-green"
+      ;;
+  deploy-staging)
+      deploy "staging"
+      ;;
+  deploy-staging-green)
+      deploy "staging" "-green"
       ;;
   deploy-testnet)
       deploy "testnet"

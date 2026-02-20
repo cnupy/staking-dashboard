@@ -1,5 +1,5 @@
 locals {
-  create_dns_record = var.env == "prod" || var.env == "testnet" ? true : false
+  create_dns_record = true
 }
 terraform {
   required_version = ">= 1.5.0"
@@ -238,7 +238,7 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
   web_acl_id          = module.website_waf.web_acl_arn
 
   # Use custom domain with certificate
-  aliases = var.env == "prod" ? ["stake.aztec.network"] : var.env == "testnet" ? ["testnet.stake.aztec.network"] : []
+  aliases = var.env == "prod" ? ["stake.aztec.network"] : ["${var.env}.stake.aztec.network"]
 
   # Origin 1: S3 bucket for static frontend assets
   origin {

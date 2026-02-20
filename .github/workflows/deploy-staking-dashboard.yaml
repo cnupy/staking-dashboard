@@ -6,9 +6,11 @@ on:
       environment:
         description: "Environment to deploy to"
         required: true
-        default: "staging"
+        default: "dev"
         type: choice
         options:
+          - dev
+          - staging
           - testnet
           - prod
       dry_run:
@@ -16,18 +18,13 @@ on:
         required: false
         default: false
         type: boolean
-      green:
-        description: "Whether to use the green indexer"
-        required: false
-        default: false
-        type: boolean
 
   push:
     tags:
+      - 'v*-dev-dashboard'
+      - 'v*-staging-dashboard'
       - 'v*-testnet-dashboard'
-      - 'v*-testnet-dashboard-green'
       - 'v*-prod-dashboard'
-      - 'v*-prod-dashboard-green'
 
 permissions:
   id-token: write
@@ -37,10 +34,9 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || (contains(github.ref, '-prod') && 'prod') || 'staging' }}
+    environment: ${{ inputs.environment || (contains(github.ref, '-prod') && 'prod') || (contains(github.ref, '-testnet') && 'testnet') || (contains(github.ref, '-staging') && 'staging') || 'dev' }}
     env:
-      ENV: ${{ inputs.environment || (contains(github.ref, '-prod') && 'prod') || 'staging' }}
-      GREEN: ${{ inputs.green || contains(github.ref, '-green') }}
+      ENV: ${{ inputs.environment || (contains(github.ref, '-prod') && 'prod') || (contains(github.ref, '-testnet') && 'testnet') || (contains(github.ref, '-staging') && 'staging') || 'dev' }}
       DRY_RUN: ${{ inputs.dry_run }}
 
       # AWS Configuration
@@ -98,20 +94,4 @@ jobs:
 
       - name: Deploy
         working-directory: staking-dashboard
-        run: |
-          if [ "$ENV" = "testnet" ]; then
-            if [ "$GREEN" = "true" ]; then
-              ./bootstrap.sh deploy-testnet-green
-            else
-              ./bootstrap.sh deploy-testnet
-            fi
-          elif [ "$ENV" = "prod" ]; then
-            if [ "$GREEN" = "true" ]; then
-              ./bootstrap.sh deploy-prod-green
-            else
-              ./bootstrap.sh deploy-prod
-            fi
-          else
-            echo "Unknown environment: $ENV"
-            exit 1
-          fi
+        run: ./bootstrap.sh "deploy-${ENV}"

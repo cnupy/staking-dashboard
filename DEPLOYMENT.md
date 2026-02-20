@@ -47,8 +47,8 @@ This means the frontend always uses its own domain for API calls (`/api/*`). Ind
 
 | Environment | Chain    | AWS Cluster | Domain                          | Branch restriction |
 |-------------|----------|-------------|---------------------------------|--------------------|
-| `dev`       | Mainnet  | dev         | —                               | None (any PR)      |
-| `staging`   | Mainnet  | dev         | —                               | None               |
+| `dev`       | Mainnet  | dev         | `dev.stake.aztec.network`       | None (any PR)      |
+| `staging`   | Mainnet  | dev         | `staging.stake.aztec.network`   | None               |
 | `testnet`   | Sepolia  | dev         | `testnet.stake.aztec.network`   | None               |
 | `prod`      | Mainnet  | prod        | `stake.aztec.network`           | `main` only        |
 
