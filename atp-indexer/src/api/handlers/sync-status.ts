@@ -18,7 +18,7 @@ const SYNC_THRESHOLD_BLOCKS = 50;
 /**
  * Handle GET /api/sync-status
  * Returns the indexer's sync status by comparing the latest indexed block to the chain head.
- * Used by the blue-green deployment cron to determine when a slave indexer has caught up.
+ * Used by the blue-green deployment cron to determine when a backup indexer has caught up.
  */
 export async function handleSyncStatus(c: Context): Promise<Response> {
   try {

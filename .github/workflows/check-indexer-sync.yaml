@@ -2,7 +2,7 @@ name: Check Indexer Sync & Switchover
 
 # Cron workflow that checks if a pending blue-green switchover is ready.
 # Runs every 30 minutes. When no switchover is pending, exits in <10s.
-# When a pending switchover's slave indexer reports synced:
+# When a pending switchover's backup indexer reports synced:
 #   1. Updates the frontend CloudFront's indexer origin to point to the new live backend
 #   2. Updates the S3 deployment state
 #   3. Triggers a deploy of the old live backend (so both end up updated)
@@ -125,7 +125,7 @@ jobs:
             echo "timed_out=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check slave sync status
+      - name: Check backup sync status
         if: steps.state.outputs.has_pending == 'true' && steps.timeout.outputs.timed_out == 'false'
         id: sync
         run: |
@@ -207,7 +207,7 @@ jobs:
             "s3://${STATE_BUCKET}/deployment-state/${{ matrix.environment }}.json" \
             --content-type "application/json"
 
-      - name: Trigger deploy to old live (now slave)
+      - name: Trigger deploy to old live (now backup)
         if: steps.state.outputs.has_pending == 'true' && steps.timeout.outputs.timed_out == 'false' && steps.sync.outputs.is_synced == 'true'
         uses: actions/github-script@v7
         with:

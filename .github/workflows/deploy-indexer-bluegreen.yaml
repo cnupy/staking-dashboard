@@ -1,10 +1,10 @@
 name: Deploy Indexer (Blue-Green)
 
 # Automated blue-green deployment for the ATP indexer.
-# Reads deployment state from S3 to determine which color is the slave,
-# deploys the indexer to the slave, and marks a switchover as pending.
+# Reads deployment state from S3 to determine which color is the backup,
+# deploys the indexer to the backup, and marks a switchover as pending.
 # The check-indexer-sync.yaml cron workflow handles the actual switchover
-# once the slave finishes re-indexing.
+# once the backup finishes re-indexing.
 
 on:
   workflow_dispatch:
@@ -36,7 +36,7 @@ permissions:
   actions: read
 
 jobs:
-  deploy-to-slave:
+  deploy-to-backup:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     env:
@@ -105,15 +105,15 @@ jobs:
             LIVE_COLOR=$(jq -r '.live_color' /tmp/deploy-state.json)
             PENDING=$(jq -r '.pending_switchover' /tmp/deploy-state.json)
 
-            # Determine slave color
+            # Determine backup color
             if [ "$LIVE_COLOR" = "red" ]; then
-              SLAVE_COLOR="green"
+              BACKUP_COLOR="green"
             else
-              SLAVE_COLOR="red"
+              BACKUP_COLOR="red"
             fi
 
             echo "live_color=$LIVE_COLOR" >> $GITHUB_OUTPUT
-            echo "slave_color=$SLAVE_COLOR" >> $GITHUB_OUTPUT
+            echo "backup_color=$BACKUP_COLOR" >> $GITHUB_OUTPUT
             echo "has_pending=$([ "$PENDING" != "null" ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
           else
             echo "::error::No deployment state found. Run scripts/init-deployment-state.sh first."
@@ -128,14 +128,14 @@ jobs:
           cat /tmp/deploy-state.json
           exit 1
 
-      - name: Deploy indexer to slave (${{ steps.state.outputs.slave_color }})
+      - name: Deploy indexer to backup (${{ steps.state.outputs.backup_color }})
         working-directory: atp-indexer
         run: |
-          SLAVE="${{ steps.state.outputs.slave_color }}"
+          BACKUP="${{ steps.state.outputs.backup_color }}"
           ENV="${{ inputs.environment }}"
-          echo "Deploying to ${ENV} ($SLAVE)"
+          echo "Deploying to ${ENV} ($BACKUP)"
 
-          if [ "$SLAVE" = "green" ]; then
+          if [ "$BACKUP" = "green" ]; then
             ./bootstrap.sh "deploy-${ENV}-green"
           else
             ./bootstrap.sh "deploy-${ENV}"
@@ -144,11 +144,11 @@ jobs:
       - name: Update deployment state with pending switchover
         if: inputs.dry_run == false
         run: |
-          SLAVE="${{ steps.state.outputs.slave_color }}"
+          BACKUP="${{ steps.state.outputs.backup_color }}"
           NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           # Update state with pending switchover
-          jq --arg target "$SLAVE" \
+          jq --arg target "$BACKUP" \
              --arg started "$NOW" \
              --arg sha "${{ github.sha }}" \
              '.pending_switchover = { target_color: $target, started_at: $started, commit_sha: $sha }' \
@@ -164,7 +164,7 @@ jobs:
           echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Deployed to:** $SLAVE (slave)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed to:** $BACKUP (backup)" >> $GITHUB_STEP_SUMMARY
           echo "- **Live:** ${{ steps.state.outputs.live_color }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
