@@ -528,6 +528,7 @@ resource "aws_cloudfront_response_headers_policy" "cors_policy" {
 
 
 resource "aws_cloudfront_distribution" "cf" {
+  comment             = "ATP Indexer (${var.env}${var.deployment_suffix})"
   enabled             = true
   default_root_object = ""
   web_acl_id          = local.backend_waf_arn

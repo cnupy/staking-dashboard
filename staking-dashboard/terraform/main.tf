@@ -233,6 +233,7 @@ resource "aws_cloudfront_response_headers_policy" "api_cors" {
 }
 
 resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
+  comment             = "Staking Dashboard (${var.env}) — frontend + /api/* proxy to indexer"
   enabled             = true
   default_root_object = "index.html"
   web_acl_id          = module.website_waf.web_acl_arn
