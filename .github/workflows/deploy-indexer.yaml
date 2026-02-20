@@ -9,6 +9,8 @@ on:
         default: "testnet"
         type: choice
         options:
+          - dev
+          - staging
           - testnet
           - prod
       dry_run:
@@ -94,19 +96,8 @@ jobs:
       - name: Deploy
         working-directory: atp-indexer
         run: |
-          if [ "$ENV" = "testnet" ]; then
-            if [ "$GREEN" = "true" ]; then
-              ./bootstrap.sh deploy-testnet-green
-            else
-              ./bootstrap.sh deploy-testnet
-            fi
-          elif [ "$ENV" = "prod" ]; then
-            if [ "$GREEN" = "true" ]; then
-              ./bootstrap.sh deploy-prod-green
-            else
-              ./bootstrap.sh deploy-prod
-            fi
+          if [ "$GREEN" = "true" ]; then
+            ./bootstrap.sh "deploy-${ENV}-green"
           else
-            echo "Unknown environment: $ENV"
-            exit 1
+            ./bootstrap.sh "deploy-${ENV}"
           fi

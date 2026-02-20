@@ -13,6 +13,8 @@ set -eu
 #   ./scripts/init-deployment-state.sh <environment> <live_color>
 #
 # Examples:
+#   ./scripts/init-deployment-state.sh dev red
+#   ./scripts/init-deployment-state.sh staging red
 #   ./scripts/init-deployment-state.sh testnet red
 #   ./scripts/init-deployment-state.sh prod red
 
@@ -26,17 +28,19 @@ STATE_BUCKET="aztec-token-sale-terraform-state"
 if [ -z "$ENVIRONMENT" ] || [ -z "$LIVE_COLOR" ]; then
   echo "Usage: $0 <environment> <live_color>"
   echo ""
-  echo "  environment: testnet or prod"
+  echo "  environment: dev, staging, testnet, or prod"
   echo "  live_color:  red or green (which color is currently serving traffic)"
   echo ""
   echo "Examples:"
+  echo "  $0 dev red"
+  echo "  $0 staging red"
   echo "  $0 testnet red"
   echo "  $0 prod red"
   exit 1
 fi
 
-if [ "$ENVIRONMENT" != "testnet" ] && [ "$ENVIRONMENT" != "prod" ]; then
-  echo "Error: Environment must be 'testnet' or 'prod'"
+if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "staging" ] && [ "$ENVIRONMENT" != "testnet" ] && [ "$ENVIRONMENT" != "prod" ]; then
+  echo "Error: Environment must be 'dev', 'staging', 'testnet', or 'prod'"
   exit 1
 fi
 

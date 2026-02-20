@@ -317,9 +317,16 @@ function deploy() {
     CHAIN_ID=11155111
     chain_environment="sepolia_testnet"
     infra_parent_environment="dev"
-  fi
-
-  if [ "$infra_environment" = "prod" ]; then
+  elif [ "$infra_environment" = "dev" ] || [ "$infra_environment" = "staging" ]; then
+    if [ -z "${RPC_URL:-}" ]; then
+      echo "Error: RPC_URL must be set"
+      exit 1
+    fi
+    RPC_URL=$RPC_URL
+    CHAIN_ID=1
+    chain_environment="prod"
+    infra_parent_environment="dev"
+  elif [ "$infra_environment" = "prod" ]; then
     if [ -z "${RPC_URL:-}" ]; then
       echo "Error: RPC_URL must be set"
       exit 1
@@ -421,6 +428,18 @@ case $ACTION in
   build)
       build
       ;;
+  deploy-dev)
+      deploy "dev"
+      ;;
+  deploy-dev-green)
+      deploy "dev" "-g"
+      ;;
+  deploy-staging)
+      deploy "staging"
+      ;;
+  deploy-staging-green)
+      deploy "staging" "-g"
+      ;;
   deploy-testnet)
       deploy "testnet"
       ;;
@@ -439,8 +458,14 @@ case $ACTION in
     echo "Actions:"
     echo "  dev        Start development server"
     echo "  build      Install deps, generate providers & types"
+    echo "  deploy-dev         Deploy to dev"
+    echo "  deploy-dev-green   Deploy to dev (green)"
+    echo "  deploy-staging     Deploy to staging"
+    echo "  deploy-staging-green Deploy to staging (green)"
     echo "  deploy-testnet     Deploy to testnet"
-    echo "  deploy-prod     Deploy to prod"
+    echo "  deploy-testnet-green Deploy to testnet (green)"
+    echo "  deploy-prod        Deploy to prod"
+    echo "  deploy-prod-green  Deploy to prod (green)"
     echo "  help       Show this help"
       echo ""
     echo "Environments:"

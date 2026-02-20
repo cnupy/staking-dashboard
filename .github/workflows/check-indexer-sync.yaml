@@ -18,6 +18,8 @@ on:
         type: choice
         options:
           - ""
+          - dev
+          - staging
           - testnet
           - prod
 
@@ -31,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [testnet, prod]
+        environment: [dev, staging, testnet, prod]
     # For manual runs targeting a specific env, skip others
     if: >-
       github.event_name == 'schedule' ||
