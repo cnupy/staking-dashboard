@@ -297,7 +297,7 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
   # /api/* requests → indexer origin group (automatic failover)
   ordered_cache_behavior {
     path_pattern     = "/api/*"
-    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD", "OPTIONS"]
     target_origin_id = "indexerOriginGroup"
 
