@@ -275,8 +275,10 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
     # CachingDisabled — the per-color indexer CloudFront handles caching
     cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
 
-    # AllViewer — forward all headers to origin
-    origin_request_policy_id = "216adef6-5c7f-47e4-b989-5492eafa07d3"
+    # AllViewerExceptHostHeader — forward all headers except Host.
+    # The Host header must NOT be forwarded because the indexer CloudFront
+    # would reject it (dev.stake.aztec.network isn't in its aliases → 403).
+    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
 
     response_headers_policy_id = aws_cloudfront_response_headers_policy.api_cors.id
   }
@@ -348,9 +350,9 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
   # IMPORTANT: For the first deploy to a new environment, comment out the
   # lifecycle block below so Terraform can create the indexerOrigin.
   # After the first successful apply, uncomment it.
-  # lifecycle {
-  #   ignore_changes = [origin]
-  # }
+  lifecycle {
+    ignore_changes = [origin]
+  }
 }
 
 #
