@@ -159,22 +159,27 @@ jobs:
             echo "is_synced=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Switch frontend CloudFront indexer origin
+      - name: Swap origin group primary to target color
         if: steps.state.outputs.has_pending == 'true' && steps.timeout.outputs.timed_out == 'false' && steps.sync.outputs.is_synced == 'true'
         run: |
           FRONTEND_DIST_ID="${{ steps.state.outputs.frontend_dist_id }}"
-          NEW_ORIGIN="${{ steps.state.outputs.target_cf_domain }}"
+          TARGET_COLOR="${{ steps.state.outputs.target_color }}"
+          TARGET_ORIGIN_ID="${TARGET_COLOR}IndexerOrigin"
 
-          echo "Switching indexer origin on frontend CloudFront $FRONTEND_DIST_ID to: $NEW_ORIGIN"
+          echo "Making ${TARGET_ORIGIN_ID} primary in origin group on $FRONTEND_DIST_ID"
 
           # Get current distribution config
           aws cloudfront get-distribution-config --id "$FRONTEND_DIST_ID" --output json > /tmp/cf-config.json
           ETAG=$(jq -r '.ETag' /tmp/cf-config.json)
 
-          # Update the "indexerOrigin" origin's domain name (not the S3 origin)
-          jq --arg domain "$NEW_ORIGIN" \
-            '(.DistributionConfig.Origins.Items[] | select(.Id == "indexerOrigin")).DomainName = $domain' \
-            /tmp/cf-config.json | jq '.DistributionConfig' > /tmp/cf-config-updated.json
+          # Reorder origin group members: put target color first (= primary)
+          jq --arg target "$TARGET_ORIGIN_ID" '
+            .DistributionConfig.OriginGroups.Items[0].Members.Items |=
+              (map(select(.OriginId == $target)) + map(select(.OriginId != $target)))
+          ' /tmp/cf-config.json | jq '.DistributionConfig' > /tmp/cf-config-updated.json
+
+          echo "New origin group member order:"
+          jq '.OriginGroups.Items[0].Members.Items[].OriginId' /tmp/cf-config-updated.json
 
           # Apply the update
           aws cloudfront update-distribution \
@@ -189,7 +194,7 @@ jobs:
             --paths "/api/*" \
             --no-cli-pager
 
-          echo "Frontend CloudFront indexer origin updated and /api/* cache invalidated"
+          echo "Origin group updated — ${TARGET_ORIGIN_ID} is now primary"
 
       - name: Update deployment state
         if: steps.state.outputs.has_pending == 'true' && steps.timeout.outputs.timed_out == 'false' && steps.sync.outputs.is_synced == 'true'

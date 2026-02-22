@@ -248,12 +248,10 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
     origin_access_control_id = aws_cloudfront_origin_access_control.oac-staking-dashboard.id
   }
 
-  # Origin 2: Live indexer CloudFront (proxied for /api/* requests).
-  # The blue-green cron workflow updates this origin's domain via AWS CLI
-  # when switching between red/green indexers.
+  # Origin 2: Red indexer CloudFront
   origin {
-    domain_name = local.atp_indexer_cf_domain
-    origin_id   = "indexerOrigin"
+    domain_name = local.red_indexer_cf_domain
+    origin_id   = "redIndexerOrigin"
 
     custom_origin_config {
       http_port              = 80
@@ -263,12 +261,45 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
     }
   }
 
-  # /api/* requests → indexer origin
+  # Origin 3: Green indexer CloudFront
+  origin {
+    domain_name = local.green_indexer_cf_domain
+    origin_id   = "greenIndexerOrigin"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # Origin group: automatic failover when primary returns 502/503/504.
+  # The sync-guard middleware on the indexer returns 503 when behind,
+  # triggering CloudFront to retry on the secondary indexer.
+  # The blue-green cron swaps member order to control which color is primary.
+  origin_group {
+    origin_id = "indexerOriginGroup"
+
+    failover_criteria {
+      status_codes = [502, 503, 504]
+    }
+
+    member {
+      origin_id = "redIndexerOrigin"
+    }
+
+    member {
+      origin_id = "greenIndexerOrigin"
+    }
+  }
+
+  # /api/* requests → indexer origin group (automatic failover)
   ordered_cache_behavior {
     path_pattern     = "/api/*"
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD", "OPTIONS"]
-    target_origin_id = "indexerOrigin"
+    target_origin_id = "indexerOriginGroup"
 
     viewer_protocol_policy = "redirect-to-https"
 
@@ -343,16 +374,17 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
     }
   }
 
-  # The indexer origin domain is updated by the blue-green cron via AWS CLI.
-  # Ignore origin changes so Terraform doesn't revert the switchover.
-  # The S3 origin never changes so this is safe.
+  # The blue-green cron swaps origin_group member order via AWS CLI
+  # to control which indexer is primary. Ignore origin_group so Terraform
+  # doesn't revert the switchover. Origins themselves have fixed domains
+  # (red/green CF) and are fully managed by Terraform.
   #
-  # IMPORTANT: For the first deploy to a new environment, comment out the
-  # lifecycle block below so Terraform can create the indexerOrigin.
-  # After the first successful apply, uncomment it.
-  lifecycle {
-    ignore_changes = [origin]
-  }
+  # MIGRATION from single indexerOrigin: temporarily comment out the
+  # lifecycle block, apply, then uncomment. This lets Terraform replace
+  # the old single origin with the red/green origins + origin group.
+  # lifecycle {
+  #   ignore_changes = [origin_group]
+  # }
 }
 
 #

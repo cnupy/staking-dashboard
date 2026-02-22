@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { globalLimiter } from './middleware/rate-limit';
+import { syncGuard } from './middleware/sync-guard';
 import { healthRoutes } from './routes/health.routes';
 import { providerRoutes } from './routes/provider.routes';
 import { stakingRoutes } from './routes/staking.routes';
@@ -22,6 +23,9 @@ app.use('*', cors({
   allowHeaders: ['Content-Type'],
   maxAge: 86400,
 }));
+
+// Return 503 when indexer is significantly behind — triggers CloudFront origin group failover
+app.use('/api/*', syncGuard.middleware());
 
 // Apply rate limiting only if enabled (disabled by default)
 if (config.RATE_LIMIT_ENABLED) {

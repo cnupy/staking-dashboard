@@ -5,7 +5,7 @@ This repo contains two deployable components:
 1. **Staking Dashboard** (`staking-dashboard/`) — React frontend served from S3 via CloudFront
 2. **ATP Indexer** (`atp-indexer/`) — Ponder blockchain indexer running on ECS Fargate
 
-Both are deployed per-environment (`dev`, `staging`, `testnet`, `prod`). The indexer has two instances per environment — **red** and **green** — to enable zero-downtime deployments.
+Both are deployed per-environment (`dev`, `staging`, `testnet`, `prod`). The indexer has two instances per environment — **red** and **green** — to enable zero-downtime deployments and automatic failover.
 
 ## Architecture
 
@@ -19,29 +19,29 @@ Both are deployed per-environment (`dev`, `staging`, `testnet`, `prod`). The ind
                       │       │
               /static │       │ /api/*
                       │       │
-               ┌──────┴──┐  ┌─┴─────────────┐
-               │ S3      │  │ indexerOrigin │ ← points to live color
-               │ Bucket  │  │ (CF domain)   │
-               └─────────┘  └──────┬────────┘
-                                   │
-                      ┌────────────┴────────────┐
-                      │                         │
-               ┌──────┴──────┐          ┌───────┴─────┐
-               │  Red CF     │          │  Green CF   │
-               └──────┬──────┘          └──────┬──────┘
-               ┌──────┴──────┐          ┌──────┴──────┐
-               │  Red ALB    │          │  Green ALB  │
-               └──────┬──────┘          └──────┴──────┘
-                      │                        │
-                 Red ECS                  Green ECS
-              (indexer+server)         (indexer+server)
+               ┌──────┴──┐  ┌─┴──────────────────┐
+               │ S3      │  │ Origin Group        │
+               │ Bucket  │  │ (failover 502/503/504)
+               └─────────┘  └──┬──────────────┬──┘
+                               │ primary      │ secondary
+                        ┌──────┴──────┐ ┌─────┴───────┐
+                        │  Red CF     │ │  Green CF   │
+                        └──────┬──────┘ └──────┬──────┘
+                        ┌──────┴──────┐ ┌──────┴──────┐
+                        │  Red ALB    │ │  Green ALB  │
+                        └──────┬──────┘ └──────┴──────┘
+                               │                │
+                          Red ECS          Green ECS
+                       (indexer+server) (indexer+server)
 ```
 
-The frontend CloudFront distribution has two origins:
+The frontend CloudFront distribution has three origins:
 - **S3** for static assets (default behavior)
-- **indexerOrigin** for `/api/*` requests, pointing to whichever indexer color is live
+- **redIndexerOrigin** and **greenIndexerOrigin** combined in an **origin group** for `/api/*` requests
 
-This means the frontend always uses its own domain for API calls (`/api/*`). Indexer switchovers only update the CloudFront origin — no frontend redeploy needed.
+The origin group provides **automatic failover**: if the primary indexer returns 502/503/504, CloudFront retries the request on the secondary indexer within the same request cycle. The indexer's sync-guard middleware returns 503 when it falls behind (>200 blocks), triggering this failover automatically.
+
+The blue-green cron swaps which color is primary in the origin group. No frontend redeploy is needed for switchovers.
 
 ## Environments
 
@@ -95,13 +95,24 @@ Runs on a cron every 30 minutes. For each environment with a `pending_switchover
 1. Hits `GET /api/sync-status` on the backup's CloudFront domain
 2. If not synced yet → exits, retries next cron run
 3. If synced → performs the switchover:
-   - Updates the frontend CloudFront's `indexerOrigin` to point to the new live color (via AWS CLI)
+   - Swaps the origin group member order so the new live color becomes **primary** (via AWS CLI)
    - Invalidates `/api/*` cache
    - Updates the S3 deployment state (`live_color` = new color, `pending_switchover` = null)
    - Triggers `Deploy ATP Indexer` for the old live (so both colors end up on the latest code)
 4. If timed out (>2 hours) → clears the pending switchover and logs an error
 
 Can also be triggered manually to check a specific environment immediately.
+
+### Automatic Failover
+
+Even without a pending switchover, if the live indexer falls behind or goes down, the **CloudFront origin group** handles failover automatically:
+
+1. The sync-guard middleware (`atp-indexer/src/api/middleware/sync-guard.ts`) checks sync status every 30 seconds
+2. When the indexer is ≥200 blocks behind, all API endpoints (except `/api/sync-status` and `/api/health`) return **503**
+3. CloudFront sees the 503 and retries the request on the **secondary** origin
+4. If the secondary is healthy, the user gets a response seamlessly — no manual intervention needed
+
+This means failover is **instant** (per-request), not dependent on cron timing.
 
 ### Sync Status Endpoint
 
@@ -118,7 +129,7 @@ Can also be triggered manually to check a specific environment immediately.
 }
 ```
 
-The indexer is considered synced when `behindBlocks < 50` and `hasData` is true (at least one provider exists in the database).
+The indexer is considered synced when `behindBlocks < 50` and `hasData` is true (at least one provider exists in the database). This endpoint always returns 200 (never blocked by the sync-guard middleware) so the blue-green cron can always check status.
 
 ### Deploying to a Single Color (Manual)
 
@@ -177,9 +188,18 @@ This reads the CloudFront domains from Terraform state and creates the S3 deploy
 
 ## Terraform
 
-The frontend CloudFront distribution's `indexerOrigin` is managed with `lifecycle { ignore_changes = [origin] }` so that Terraform doesn't revert origin changes made by the blue-green cron via AWS CLI.
+The frontend CloudFront distribution uses an **origin group** with both red and green indexer CloudFronts. The origin group member order (which is primary) is managed by the blue-green cron via AWS CLI. The `lifecycle { ignore_changes = [origin_group] }` block prevents Terraform from reverting the cron's changes. The origins themselves have fixed domains and are fully managed by Terraform.
 
 SPA routing is handled by a CloudFront Function (`spa_routing`) on the default behavior's viewer-request event instead of a 404 `custom_error_response`, because `custom_error_response` is distribution-wide and would intercept API 404s.
+
+### Migrating from single indexerOrigin to origin group
+
+For existing environments that still have a single `indexerOrigin`:
+
+1. Temporarily comment out the `lifecycle` block in `staking-dashboard/terraform/main.tf`
+2. Run `terraform apply` — this replaces the old origin with red/green origins + origin group
+3. Uncomment the `lifecycle` block
+4. Apply again (no-op, just registers the lifecycle)
 
 ## Troubleshooting
 
@@ -187,6 +207,8 @@ SPA routing is handled by a CloudFront Function (`spa_routing`) on the default b
 
 **Switchover never triggers:** Verify the S3 state file has a `pending_switchover` set. The cron only runs every 30 minutes — trigger `Check Indexer Sync & Switchover` manually for faster feedback.
 
-**Wrong color is live:** Manually run `Deploy ATP Indexer` targeting the correct color, then update the S3 state file's `live_color` field directly.
+**Wrong color is live:** Manually run `Deploy ATP Indexer` targeting the correct color, then update the S3 state file's `live_color` field directly. To also change the origin group primary, use `aws cloudfront get-distribution-config` / `update-distribution` to reorder the origin group members.
 
-**Terraform wants to revert the origin:** The `lifecycle { ignore_changes = [origin] }` block should prevent this. If it's happening, check that the block is still present in `staking-dashboard/terraform/main.tf`.
+**Terraform wants to revert the origin group:** The `lifecycle { ignore_changes = [origin_group] }` block should prevent this. If it's happening, check that the block is still present in `staking-dashboard/terraform/main.tf`.
+
+**API returns 503:** The sync-guard middleware returns 503 when the indexer is ≥200 blocks behind. Check `/api/sync-status` directly on the indexer's CloudFront domain to see the actual sync status. If both indexers are behind, both will return 503 and no failover target is available — investigate why indexing is stalled.
