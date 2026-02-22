@@ -29,14 +29,14 @@ export async function getIndexerProgress(): Promise<{
 
   const [chainHeadBlock, checkpointRows] = await Promise.all([
     client.getBlockNumber(),
-    db.execute(sql`SELECT "latestCheckpoint" FROM "_ponder_checkpoint" LIMIT 1`),
+    db.execute(sql`SELECT "latest_checkpoint" FROM "_ponder_checkpoint" LIMIT 1`),
   ]);
 
   const chainHead = Number(chainHeadBlock);
 
   // drizzle execute() returns { rows: [...] } for node-postgres
-  const rows = (checkpointRows as { rows: { latestCheckpoint: string }[] }).rows;
-  const latestCheckpoint = rows?.[0]?.latestCheckpoint;
+  const rows = (checkpointRows as unknown as { rows: { latest_checkpoint: string }[] }).rows;
+  const latestCheckpoint = rows?.[0]?.latest_checkpoint;
 
   const indexedBlock = latestCheckpoint ? decodeBlockNumber(latestCheckpoint) : 0;
   const behindBlocks = chainHead - indexedBlock;
