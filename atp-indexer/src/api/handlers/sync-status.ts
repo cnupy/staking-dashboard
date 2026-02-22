@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { db } from 'ponder:api';
 import { count } from 'drizzle-orm';
 import { provider } from 'ponder:schema';
-import { getIndexerProgress } from '../../utils/indexer-progress';
+import { getIndexerProgress } from '../utils/indexer-progress';
 
 interface SyncStatusResponse {
   synced: boolean;

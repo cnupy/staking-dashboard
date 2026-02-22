@@ -2,7 +2,7 @@ import type { Context, Next } from 'hono';
 import { db } from 'ponder:api';
 import { count } from 'drizzle-orm';
 import { provider } from 'ponder:schema';
-import { getIndexerProgress } from '../../utils/indexer-progress';
+import { getIndexerProgress } from '../utils/indexer-progress';
 
 /**
  * Sync guard middleware — returns 503 when the indexer is significantly behind

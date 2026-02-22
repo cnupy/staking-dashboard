@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from 'ponder:api';
-import { getPublicClient } from './viem-client';
+import { getPublicClient } from '../../utils/viem-client';
 
 /**
  * Block number is encoded at positions 26–41 (16 digits) in Ponder's
