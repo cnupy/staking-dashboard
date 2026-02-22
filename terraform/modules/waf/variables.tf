@@ -151,6 +151,12 @@ variable "custom_vpn_ip_list" {
   default     = []
 }
 
+variable "bot_control_excluded_uri_prefix" {
+  description = "URI prefix to exclude from Bot Control evaluation (e.g. '/api/'). Requests matching this prefix bypass bot checks."
+  type        = string
+  default     = ""
+}
+
 variable "blocked_ukrainian_regions" {
   description = "List of Ukrainian region codes to block (ISO 3166-2 region code without country prefix, e.g., \"14\" for Donetsk, \"09\" for Luhansk, \"43\" for Crimea). Full list: https://en.wikipedia.org/wiki/ISO_3166-2:UA"
   type        = list(string)

@@ -20,6 +20,7 @@ module "website_waf" {
   enable_ip_reputation_list         = true
   enable_anon_ip_rule_set           = false
   enable_bot_control_rule_set       = true
+  bot_control_excluded_uri_prefix   = "/api/"  # API paths proxied to indexer; bots/scripts need access
   enable_xss_rule_set               = true
 
   # Block specific Ukrainian regions

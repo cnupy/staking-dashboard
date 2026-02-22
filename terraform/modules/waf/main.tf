@@ -345,6 +345,28 @@ resource "aws_wafv2_web_acl" "this" {
         managed_rule_group_statement {
           name        = "AWSManagedRulesBotControlRuleSet"
           vendor_name = "AWS"
+
+          # Optionally exclude a URI prefix (e.g. /api/) from bot evaluation
+          dynamic "scope_down_statement" {
+            for_each = var.bot_control_excluded_uri_prefix != "" ? [1] : []
+            content {
+              not_statement {
+                statement {
+                  byte_match_statement {
+                    search_string         = var.bot_control_excluded_uri_prefix
+                    positional_constraint = "STARTS_WITH"
+                    field_to_match {
+                      uri_path {}
+                    }
+                    text_transformation {
+                      priority = 0
+                      type     = "LOWERCASE"
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
 
