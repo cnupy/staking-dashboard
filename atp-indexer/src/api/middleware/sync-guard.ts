@@ -1,8 +1,8 @@
 import type { Context, Next } from 'hono';
 import { db } from 'ponder:api';
-import { max, count } from 'drizzle-orm';
-import { deposit, provider, atpPosition } from 'ponder:schema';
-import { getPublicClient } from '../../utils/viem-client';
+import { count } from 'drizzle-orm';
+import { provider } from 'ponder:schema';
+import { getIndexerProgress } from '../../utils/indexer-progress';
 
 /**
  * Sync guard middleware — returns 503 when the indexer is significantly behind
@@ -21,7 +21,6 @@ const EXCLUDED_PREFIXES = ['/api/sync-status', '/api/health'];
 
 class SyncGuard {
   private behindBlocks = 0;
-  private hasData = false;
   private healthy = true;
   private initialized = false;
 
@@ -32,35 +31,19 @@ class SyncGuard {
 
   private async check() {
     try {
-      const client = getPublicClient();
+      const [progress, providerCount] = await Promise.all([
+        getIndexerProgress(),
+        db.select({ count: count() }).from(provider),
+      ]);
 
-      const [chainHeadBlock, depositMax, providerMax, atpMax, providerCount] =
-        await Promise.all([
-          client.getBlockNumber(),
-          db.select({ maxBlock: max(deposit.blockNumber) }).from(deposit),
-          db.select({ maxBlock: max(provider.blockNumber) }).from(provider),
-          db.select({ maxBlock: max(atpPosition.blockNumber) }).from(atpPosition),
-          db.select({ count: count() }).from(provider),
-        ]);
-
-      const chainHead = Number(chainHeadBlock);
-      const maxBlocks = [
-        depositMax[0]?.maxBlock,
-        providerMax[0]?.maxBlock,
-        atpMax[0]?.maxBlock,
-      ]
-        .filter((b): b is bigint => b !== null && b !== undefined)
-        .map(Number);
-
-      const indexedBlock = maxBlocks.length > 0 ? Math.max(...maxBlocks) : 0;
-      this.hasData = Number(providerCount[0].count) > 0;
-      this.behindBlocks = chainHead - indexedBlock;
-      this.healthy = this.behindBlocks < BEHIND_THRESHOLD && this.hasData;
+      const hasData = Number(providerCount[0].count) > 0;
+      this.behindBlocks = progress.behindBlocks;
+      this.healthy = this.behindBlocks < BEHIND_THRESHOLD && hasData;
       this.initialized = true;
 
       if (!this.healthy) {
         console.warn(
-          `[sync-guard] Unhealthy: ${this.behindBlocks} blocks behind (threshold: ${BEHIND_THRESHOLD}, hasData: ${this.hasData})`
+          `[sync-guard] Unhealthy: ${this.behindBlocks} blocks behind (threshold: ${BEHIND_THRESHOLD}, hasData: ${hasData})`
         );
       }
     } catch (error) {

@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
 import { db } from 'ponder:api';
-import { max, count } from 'drizzle-orm';
-import { deposit, provider, atpPosition } from 'ponder:schema';
-import { getPublicClient } from '../../utils/viem-client';
+import { count } from 'drizzle-orm';
+import { provider } from 'ponder:schema';
+import { getIndexerProgress } from '../../utils/indexer-progress';
 
 interface SyncStatusResponse {
   synced: boolean;
@@ -22,43 +22,19 @@ const SYNC_THRESHOLD_BLOCKS = 50;
  */
 export async function handleSyncStatus(c: Context): Promise<Response> {
   try {
-    const client = getPublicClient();
-
-    const [
-      chainHeadBlock,
-      depositMaxBlock,
-      providerMaxBlock,
-      atpMaxBlock,
-      providerCountResult,
-    ] = await Promise.all([
-      client.getBlockNumber(),
-      db.select({ maxBlock: max(deposit.blockNumber) }).from(deposit),
-      db.select({ maxBlock: max(provider.blockNumber) }).from(provider),
-      db.select({ maxBlock: max(atpPosition.blockNumber) }).from(atpPosition),
+    const [progress, providerCountResult] = await Promise.all([
+      getIndexerProgress(),
       db.select({ count: count() }).from(provider),
     ]);
 
-    const chainHead = Number(chainHeadBlock);
-
-    // Take the highest block number across all tables
-    const maxBlocks = [
-      depositMaxBlock[0]?.maxBlock,
-      providerMaxBlock[0]?.maxBlock,
-      atpMaxBlock[0]?.maxBlock,
-    ]
-      .filter((b): b is bigint => b !== null && b !== undefined)
-      .map(Number);
-
-    const indexedBlock = maxBlocks.length > 0 ? Math.max(...maxBlocks) : 0;
     const hasData = Number(providerCountResult[0].count) > 0;
-    const behindBlocks = chainHead - indexedBlock;
-    const synced = behindBlocks < SYNC_THRESHOLD_BLOCKS && hasData;
+    const synced = progress.behindBlocks < SYNC_THRESHOLD_BLOCKS && hasData;
 
     const response: SyncStatusResponse = {
       synced,
-      indexedBlock,
-      chainHead,
-      behindBlocks,
+      indexedBlock: progress.indexedBlock,
+      chainHead: progress.chainHead,
+      behindBlocks: progress.behindBlocks,
       hasData,
       timestamp: new Date().toISOString(),
     };
