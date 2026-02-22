@@ -18,8 +18,6 @@ locals {
   ecs_cluster_id                 = data.terraform_remote_state.shared.outputs.ecs_cluster_id
   aws_services_security_group_id = data.terraform_remote_state.shared.outputs.aws_services_security_group_id
   vpc_internal_security_group_id = data.terraform_remote_state.shared.outputs.vpc_internal_security_group_id
-  backend_waf_arn                = data.terraform_remote_state.shared.outputs.backend_waf_arn
-
   # CloudFront secret header configuration (shared across all backend services)
   # Use try() to handle cases where outputs don't exist yet in remote state
   cloudfront_secret_header_ssm_name = try(data.terraform_remote_state.shared.outputs.cloudfront_secret_header_ssm_name, "")

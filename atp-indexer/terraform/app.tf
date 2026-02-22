@@ -531,7 +531,7 @@ resource "aws_cloudfront_distribution" "cf" {
   comment             = "ATP Indexer (${var.env}${var.deployment_suffix})"
   enabled             = true
   default_root_object = ""
-  web_acl_id          = local.backend_waf_arn
+  web_acl_id          = module.indexer_waf.web_acl_arn
 
   # Use custom domain with certificate
   # aliases = ["indexer.${var.env}.stake.aztec.network"]
