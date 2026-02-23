@@ -378,13 +378,9 @@ resource "aws_cloudfront_distribution" "staking_dashboard_distribution" {
   # to control which indexer is primary. Ignore origin_group so Terraform
   # doesn't revert the switchover. Origins themselves have fixed domains
   # (red/green CF) and are fully managed by Terraform.
-  #
-  # MIGRATION from single indexerOrigin: temporarily comment out the
-  # lifecycle block, apply, then uncomment. This lets Terraform replace
-  # the old single origin with the red/green origins + origin group.
-  # lifecycle {
-  #   ignore_changes = [origin_group]
-  # }
+  lifecycle {
+    ignore_changes = [origin_group]
+  }
 }
 
 #

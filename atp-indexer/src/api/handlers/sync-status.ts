@@ -13,7 +13,7 @@ interface SyncStatusResponse {
   timestamp: string;
 }
 
-const SYNC_THRESHOLD_BLOCKS = 50;
+const SYNC_THRESHOLD_BLOCKS = 10;
 
 /**
  * Handle GET /api/sync-status

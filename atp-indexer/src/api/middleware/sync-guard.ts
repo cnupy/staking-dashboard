@@ -13,7 +13,7 @@ import { getIndexerProgress } from '../utils/indexer-progress';
  * always pass through so the blue-green cron can still query sync status.
  */
 
-const BEHIND_THRESHOLD = 200;
+const BEHIND_THRESHOLD = 50;
 const CHECK_INTERVAL_MS = 30_000;
 const INITIAL_DELAY_MS = 5_000;
 
