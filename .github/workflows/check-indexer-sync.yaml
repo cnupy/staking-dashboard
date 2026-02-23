@@ -236,7 +236,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'deploy-indexer.yaml',
-              ref: 'main',
+              ref: context.ref,
               inputs: {
                 environment: env,
                 green: oldLive === 'green' ? 'true' : 'false',
