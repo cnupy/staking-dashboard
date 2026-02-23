@@ -8,9 +8,6 @@ name: Check Indexer Sync & Switchover
 #   3. Triggers a deploy of the old live backend (so both end up updated)
 
 on:
-  push:
-    branches:
-      - km/automted-deployment
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
@@ -51,12 +48,6 @@ jobs:
           EVENT="${{ github.event_name }}"
           TARGET="${{ inputs.environment }}"
           CURRENT="${{ matrix.environment }}"
-
-          if [ "$EVENT" = "push" ] && [ "$CURRENT" != "dev" ]; then
-            echo "Skipping $CURRENT (push only runs dev)"
-            echo "run=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
 
           if [ "$EVENT" = "schedule" ] || [ -z "$TARGET" ] || [ "$TARGET" = "$CURRENT" ]; then
             echo "run=true" >> $GITHUB_OUTPUT
