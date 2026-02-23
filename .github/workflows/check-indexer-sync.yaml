@@ -8,6 +8,9 @@ name: Check Indexer Sync & Switchover
 #   3. Triggers a deploy of the old live backend (so both end up updated)
 
 on:
+  push:
+    branches:
+      - km/automted-deployment
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:

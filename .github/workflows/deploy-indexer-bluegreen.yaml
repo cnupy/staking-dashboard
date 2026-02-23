@@ -7,9 +7,6 @@ name: Deploy Indexer (Blue-Green)
 # once the backup finishes re-indexing.
 
 on:
-  push:
-    branches:
-      - km/automted-deployment
   workflow_dispatch:
     inputs:
       environment:
