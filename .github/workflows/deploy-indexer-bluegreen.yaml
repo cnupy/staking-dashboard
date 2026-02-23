@@ -7,6 +7,9 @@ name: Deploy Indexer (Blue-Green)
 # once the backup finishes re-indexing.
 
 on:
+  push:
+    branches:
+      - km/automted-deployment
   workflow_dispatch:
     inputs:
       environment:
@@ -38,11 +41,11 @@ permissions:
 jobs:
   deploy-to-backup:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ inputs.environment || 'dev' }}
     env:
-      ENV: ${{ inputs.environment }}
-      DRY_RUN: ${{ inputs.dry_run }}
-      FORCE: ${{ inputs.force }}
+      ENV: ${{ inputs.environment || 'dev' }}
+      DRY_RUN: ${{ inputs.dry_run || false }}
+      FORCE: ${{ inputs.force || false }}
 
       # AWS Configuration
       AWS_ACCOUNT: ${{ secrets.AWS_ACCOUNT }}
@@ -95,7 +98,7 @@ jobs:
       - name: Read deployment state from S3
         id: state
         run: |
-          STATE_KEY="deployment-state/${{ inputs.environment }}.json"
+          STATE_KEY="deployment-state/${ENV}.json"
           STATE_BUCKET="aztec-token-sale-terraform-state"
 
           if aws s3 cp "s3://${STATE_BUCKET}/${STATE_KEY}" /tmp/deploy-state.json 2>/dev/null; then
@@ -121,7 +124,7 @@ jobs:
           fi
 
       - name: Check for pending switchover
-        if: steps.state.outputs.has_pending == 'true' && inputs.force == false
+        if: steps.state.outputs.has_pending == 'true' && env.FORCE == 'false'
         run: |
           echo "::error::A switchover is already pending. Use force=true to override."
           echo "Current state:"
@@ -132,7 +135,6 @@ jobs:
         working-directory: atp-indexer
         run: |
           BACKUP="${{ steps.state.outputs.backup_color }}"
-          ENV="${{ inputs.environment }}"
           echo "Deploying to ${ENV} ($BACKUP)"
 
           if [ "$BACKUP" = "green" ]; then
@@ -142,7 +144,7 @@ jobs:
           fi
 
       - name: Update deployment state with pending switchover
-        if: inputs.dry_run == false
+        if: env.DRY_RUN == 'false'
         run: |
           BACKUP="${{ steps.state.outputs.backup_color }}"
           NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -158,12 +160,12 @@ jobs:
           cat /tmp/deploy-state-updated.json
 
           aws s3 cp /tmp/deploy-state-updated.json \
-            "s3://aztec-token-sale-terraform-state/deployment-state/${{ inputs.environment }}.json" \
+            "s3://aztec-token-sale-terraform-state/deployment-state/${ENV}.json" \
             --content-type "application/json"
 
           echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${ENV}" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployed to:** $BACKUP (backup)" >> $GITHUB_STEP_SUMMARY
           echo "- **Live:** ${{ steps.state.outputs.live_color }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
