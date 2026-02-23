@@ -51,6 +51,12 @@ jobs:
           TARGET="${{ inputs.environment }}"
           CURRENT="${{ matrix.environment }}"
 
+          if [ "$EVENT" = "push" ] && [ "$CURRENT" != "dev" ]; then
+            echo "Skipping $CURRENT (push only runs dev)"
+            echo "run=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           if [ "$EVENT" = "schedule" ] || [ -z "$TARGET" ] || [ "$TARGET" = "$CURRENT" ]; then
             echo "run=true" >> $GITHUB_OUTPUT
           else
