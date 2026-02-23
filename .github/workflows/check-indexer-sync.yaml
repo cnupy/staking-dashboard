@@ -35,6 +35,7 @@ jobs:
   check-and-switch:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         environment: [dev, staging, testnet, prod]
     environment: ${{ matrix.environment }}
