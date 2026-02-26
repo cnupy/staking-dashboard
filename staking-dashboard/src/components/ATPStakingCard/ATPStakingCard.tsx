@@ -516,7 +516,7 @@ export const ATPStakingCard = ({
               />
               {data.milestoneId !== undefined && (
                 <span className="text-xs text-parchment/60 font-oracle-standard">
-                  Milestone {Number(data.milestoneId)}
+                  Milestone {Number(data.milestoneId) + 1}
                 </span>
               )}
             </>

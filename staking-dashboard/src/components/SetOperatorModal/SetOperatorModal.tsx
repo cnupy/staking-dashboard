@@ -105,7 +105,7 @@ export default function SetOperatorModal({
                 <span className={styles.atpType}>{getTypeName(atp)}</span>
                 {atp.milestoneId !== undefined && (
                   <span className={styles.milestoneId}>
-                    Milestone {atp.milestoneId.toString()}
+                    Milestone {Number(atp.milestoneId) + 1}
                   </span>
                 )}
               </div>

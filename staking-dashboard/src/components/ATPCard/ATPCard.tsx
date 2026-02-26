@@ -152,7 +152,7 @@ export default function ATPCard({
       <div className={styles.milestoneBadgeRow}>
         {atp.milestoneId !== undefined && (
           <span className={styles.milestoneTag}>
-            Milestone {atp.milestoneId.toString()}
+            Milestone {Number(atp.milestoneId) + 1}
           </span>
         )}
         <span
