@@ -90,10 +90,10 @@ ponder.on("ATPFactoryAuction:ATPCreated", async (params) => {
   await handleATPCreated(params, "auction");
 });
 
-ponder.on("ATPFactoryEmployee:ATPCreated", async (params) => {
-  await handleATPCreated(params, "employee");
+ponder.on("ATPFactoryMATP:ATPCreated", async (params) => {
+  await handleATPCreated(params, "matp");
 });
 
-ponder.on("ATPFactoryInvestor:ATPCreated", async (params) => {
-  await handleATPCreated(params, "investor");
+ponder.on("ATPFactoryLATP:ATPCreated", async (params) => {
+  await handleATPCreated(params, "latp");
 });

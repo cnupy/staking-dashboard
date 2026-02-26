@@ -48,15 +48,15 @@ const configSchema = z.object({
   // Contract addresses
   ATP_FACTORY_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
   ATP_FACTORY_AUCTION_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
-  ATP_FACTORY_EMPLOYEE_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
-  ATP_FACTORY_INVESTOR_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
+  ATP_FACTORY_MATP_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
+  ATP_FACTORY_LATP_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
   STAKING_REGISTRY_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
   ROLLUP_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
 
   // Indexer settings
   START_BLOCK: z.string().transform(Number).refine(n => n >= 0, 'START_BLOCK must be non-negative').default('0'),
-  EMPLOYEE_FACTORY_START_BLOCK: z.string().transform(Number).refine(n => n >= 0, 'EMPLOYEE_FACTORY_START_BLOCK must be non-negative').optional(),
-  INVESTOR_FACTORY_START_BLOCK: z.string().transform(Number).refine(n => n >= 0, 'INVESTOR_FACTORY_START_BLOCK must be non-negative').optional(),
+  MATP_FACTORY_START_BLOCK: z.string().transform(Number).refine(n => n >= 0, 'MATP_FACTORY_START_BLOCK must be non-negative').optional(),
+  LATP_FACTORY_START_BLOCK: z.string().transform(Number).refine(n => n >= 0, 'LATP_FACTORY_START_BLOCK must be non-negative').optional(),
 
   // Application
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

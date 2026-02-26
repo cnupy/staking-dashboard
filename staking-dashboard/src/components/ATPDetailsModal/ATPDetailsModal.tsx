@@ -7,6 +7,7 @@ import { useRollupData } from "@/hooks/rollup/useRollupData"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { useATP } from "@/hooks/useATP"
 import { useUserGovernancePower, usePendingWithdrawals } from "@/hooks/governance"
+import { useBlockTimestamp } from "@/hooks/useBlockTimestamp"
 import { formatTokenAmount } from "@/utils/atpFormatters"
 import { Icon } from "@/components/Icon"
 import { ATPDetailsHeader } from "./ATPDetailsHeader"
@@ -125,6 +126,7 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
   const { votingPower: governanceVotingPower, refetch: refetchGovernancePower } = useUserGovernancePower({
     stakerAddress: atp.staker
   })
+  const { blockTimestamp } = useBlockTimestamp()
 
   // Get pending governance withdrawals for this ATP (initiated but not yet finalized)
   const { pendingWithdrawals: governancePendingWithdrawals, refetch: refetchGovernancePendingWithdrawals } = usePendingWithdrawals({
@@ -321,6 +323,7 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                   globalLock={atp.globalLock}
                   atpType={atp.typeString}
                   registryAddress={atp.registry}
+                  blockTimestamp={blockTimestamp}
                 />
               </div>
             )}

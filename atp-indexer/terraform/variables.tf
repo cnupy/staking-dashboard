@@ -127,6 +127,18 @@ variable "atp_factory_auction_address" {
     default     = ""
 }
 
+variable "atp_factory_matp_address" {
+  description = "ATP Factory MATP contract address"
+  type        = string
+  default     = ""
+}
+
+variable "atp_factory_latp_address" {
+  description = "ATP Factory LATP contract address"
+  type        = string
+  default     = ""
+}
+
 variable "staking_registry_address" {
   description = "Staking Registry contract address"
   type        = string

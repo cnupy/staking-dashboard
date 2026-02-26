@@ -45,10 +45,15 @@ export function getStakeableAmount(atp: ATPData): bigint {
 
 /**
  * Calculate time until claimable
+ * @param atp - ATP data with globalLock info
+ * @param blockTimestamp - Optional blockchain timestamp to use instead of Date.now()
+ *                         This ensures consistency with anvil time warps during testing
  */
-export function getTimeToClaimForATP(atp: ATPData): string {
+export function getTimeToClaimForATP(atp: ATPData, blockTimestamp?: bigint): string {
   if (atp.globalLock?.endTime) {
-    const now = Math.floor(Date.now() / 1000)
+    const now = blockTimestamp
+      ? Number(blockTimestamp)
+      : Math.floor(Date.now() / 1000)
     const endTime = Number(atp.globalLock.endTime)
     const timeLeft = endTime - now
 

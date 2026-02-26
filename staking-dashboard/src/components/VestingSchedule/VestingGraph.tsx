@@ -3,6 +3,7 @@ import type { Address } from "viem"
 import { formatTokenAmount } from "@/utils/atpFormatters"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { useVestingCalculation } from "@/hooks/atp"
+import { isAuctionRegistry } from "@/hooks/atpRegistry"
 
 interface VestingGraphProps {
   globalLock: {
@@ -14,13 +15,18 @@ interface VestingGraphProps {
   atpType?: string
   registryAddress?: Address
   className?: string
+  /** Blockchain timestamp to use for "NOW" position. Falls back to Date.now() if not provided */
+  blockTimestamp?: bigint
 }
 
 /**
  * SVG vector graph showing cliff vesting pattern
  */
-export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) => {
+export const VestingGraph = ({ globalLock, registryAddress, className = "", blockTimestamp }: VestingGraphProps) => {
   const { symbol, decimals } = useStakingAssetTokenDetails()
+
+  // Check if this is an ATP from auction registry
+  const isAuctionATP = isAuctionRegistry(registryAddress)
 
   // Check for invalid time range
   const hasInvalidTimeRange = Number(globalLock.endTime) < Number(globalLock.startTime)
@@ -46,7 +52,7 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
     )
   }
 
-  const vestingData = useVestingCalculation(globalLock)
+  const vestingData = useVestingCalculation(globalLock, blockTimestamp)
 
   const graphData = useMemo(() => {
     // Graph dimensions
@@ -60,53 +66,60 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
     const startTime = Number(globalLock.startTime)
     const cliffTime = Number(globalLock.cliff)
     const endTime = Number(globalLock.endTime)
-    const now = Math.floor(Date.now() / 1000)
+    // Use blockchain timestamp if provided, otherwise fall back to Date.now()
+    const now = blockTimestamp ? Number(blockTimestamp) : Math.floor(Date.now() / 1000)
 
     // Handle edge cases
     const startEqualsCliff = startTime === cliffTime
     const cliffEqualsEnd = cliffTime === endTime
 
-    // Calculate time range for X axis
-    const timeRange = endTime - startTime
-    const nowPosition = timeRange === 0 ? graphWidth / 2 : ((now - startTime) / timeRange) * graphWidth
+    // Calculate time range for X axis - include NOW if it's before startTime
+    const xAxisStart = Math.min(now, startTime)
+    const timeRange = endTime - xAxisStart
+
+    // Calculate X positions relative to the full axis range
+    const nowPosition = timeRange === 0 ? 0 : ((now - xAxisStart) / timeRange) * graphWidth
+    const startX = timeRange === 0 ? 0 : ((startTime - xAxisStart) / timeRange) * graphWidth
+
+    // Calculate cliff X position relative to full axis
+    const cliffX = timeRange === 0 ? startX : ((cliffTime - xAxisStart) / timeRange) * graphWidth
 
     // Create path points for cliff vesting pattern - handle collision cases
+    // Note: Path starts at startX (not 0) when NOW is before startTime
     let pathPoints = []
 
     if (startEqualsCliff && cliffEqualsEnd) {
       // All three points are the same - instant vest
       pathPoints = [
-        { x: 0, y: 0 }, // Start at 100%
+        { x: startX, y: 0 }, // Start at 100%
         { x: graphWidth, y: 0 } // End at 100%
       ]
     } else if (startEqualsCliff) {
       // Start = Cliff, but different from End - immediate cliff unlock then linear
       pathPoints = [
-        { x: 0, y: graphHeight - (vestingData.cliffUnlockRatio * graphHeight) }, // Start at cliff %
+        { x: startX, y: graphHeight - (vestingData.cliffUnlockRatio * graphHeight) }, // Start at cliff %
         { x: graphWidth, y: 0 } // Linear to 100% at end
       ]
     } else if (cliffEqualsEnd) {
       // Cliff = End - stay at 0% until cliff, then jump to 100%
-      const cliffX = graphWidth
       pathPoints = [
-        { x: 0, y: graphHeight }, // Start at 0%
-        { x: cliffX - 1, y: graphHeight }, // Stay at 0% until just before cliff
-        { x: cliffX, y: 0 } // Jump to 100% at cliff/end
+        { x: startX, y: graphHeight }, // Start at 0%
+        { x: graphWidth - 1, y: graphHeight }, // Stay at 0% until just before cliff
+        { x: graphWidth, y: 0 } // Jump to 100% at cliff/end
       ]
     } else {
       // Normal case - all three points are distinct
-      const cliffX = ((cliffTime - startTime) / timeRange) * graphWidth
       pathPoints = [
-        { x: 0, y: graphHeight }, // Start at 0%
+        { x: startX, y: graphHeight }, // Start at 0%
         { x: cliffX, y: graphHeight }, // Stay at 0% until cliff
         { x: cliffX, y: graphHeight - (vestingData.cliffUnlockRatio * graphHeight) }, // Jump to cliff %
         { x: graphWidth, y: 0 } // Linear to 100% at end
       ]
     }
 
-    // Create SVG path
+    // Create SVG path - area starts at startX (which may be > 0 if now < startTime)
     const linePath = `M ${pathPoints.map(p => `${p.x},${p.y}`).join(' L ')}`
-    const areaPath = `M 0,${graphHeight} ${pathPoints.map(p => `L ${p.x},${p.y}`).join(' ')} L ${graphWidth},${graphHeight} Z`
+    const areaPath = `M ${startX},${graphHeight} ${pathPoints.map(p => `L ${p.x},${p.y}`).join(' ')} L ${graphWidth},${graphHeight} Z`
 
     // Calculate current vested position
     let currentY = graphHeight
@@ -130,10 +143,8 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
       }
     }
 
-    const timeStartToCliff = Math.max(0, cliffTime - startTime)
-    const timeCliffToEnd = Math.max(0, endTime - cliffTime)
-    const timeNowToCliff = Math.max(0, cliffTime - now)
-    const timeNowToEnd = Math.max(0, endTime - now)
+    const timeNowToStart = Math.max(0, startTime - now)
+    const lockDuration = Math.max(0, endTime - startTime)
 
     return {
       width,
@@ -149,18 +160,36 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
       startTime,
       cliffTime,
       endTime,
-      timeStartToCliff,
-      timeCliffToEnd,
-      timeNowToCliff,
-      timeNowToEnd,
+      startX,
+      cliffX,
+      timeNowToStart,
+      lockDuration,
       formatTimeRemaining,
       startEqualsCliff,
-      cliffEqualsEnd
+      cliffEqualsEnd,
+      nowBeforeStart: now < startTime
     }
-  }, [globalLock, vestingData])
+  }, [globalLock, vestingData, blockTimestamp])
 
   return (
     <div className={`bg-gradient-to-br from-ink/40 to-ink/20 border border-parchment/10 rounded-lg p-6 ${className}`}>
+      {/* TGE Notice for Auction ATP */}
+      {isAuctionATP && (
+        <div className="mb-6 p-4 bg-chartreuse/10 border border-chartreuse/30 text-left">
+          <div className="text-sm text-parchment font-oracle-standard">
+            <strong className="text-chartreuse">TGE Notice:</strong> Tokens become available at TGE. TGE is decided by governance. Earliest anticipated in 90 days from start date. Latest is{' '}
+            <strong>
+              {new Date(Number(globalLock.endTime) * 1000).toLocaleDateString('en-US', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+              })}
+            </strong>
+            {' '}as shown in the graph below.
+          </div>
+        </div>
+      )}
+
       <svg
         className="w-full h-full"
         viewBox={`0 0 ${graphData.width} ${graphData.height}`}
@@ -222,39 +251,36 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
             100%
           </text>
 
-          {/* Show cliff labels on outer (left) side if ratio <= 0.6, inside graph if ratio > 0.6 */}
-          {vestingData.cliffUnlockRatio > 0.6 ? (
-            <>
-              <text x="10" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) + 2} textAnchor="start" fontSize="9" fill="rgba(212, 255, 40, 0.5)" className="font-mono uppercase">
-                Cliff Unlock
-              </text>
-              <text x="10" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) + 17} textAnchor="start" fontSize="14" fill="rgba(212, 255, 40, 0.8)" className="font-mono font-bold">
-                {formatTokenAmount(BigInt(Math.floor(Number(globalLock.allocation) * vestingData.cliffUnlockRatio)), decimals, symbol)}
-              </text>
-              <text x="10" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) + 35} textAnchor="start" fontSize="12" fill="rgba(212, 255, 40, 0.6)" className="font-mono">
-                {(vestingData.cliffUnlockRatio * 100).toFixed(2)}%
-              </text>
-            </>
-          ) : (
-            <>
-              <text x="-20" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) - 25} textAnchor="end" fontSize="9" fill="rgba(212, 255, 40, 0.5)" className="font-mono uppercase">
-                Cliff Unlock
-              </text>
-              <text x="-20" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) - 10} textAnchor="end" fontSize="14" fill="rgba(212, 255, 40, 0.8)" className="font-mono font-bold">
-                {formatTokenAmount(BigInt(Math.floor(Number(globalLock.allocation) * vestingData.cliffUnlockRatio)), decimals, symbol)}
-              </text>
-              <text x="-20" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) + 8} textAnchor="end" fontSize="12" fill="rgba(212, 255, 40, 0.6)" className="font-mono">
-                {(vestingData.cliffUnlockRatio * 100).toFixed(2)}%
-              </text>
-            </>
+          {/* Show cliff labels only when cliff unlock ratio > 0 (to avoid overlapping with 0% labels) */}
+          {/* Position on outer (left) side if ratio <= 0.6, inside graph if ratio > 0.6 */}
+          {vestingData.cliffUnlockRatio > 0.01 && (
+            vestingData.cliffUnlockRatio > 0.6 ? (
+              <>
+                <text x="10" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) + 2} textAnchor="start" fontSize="9" fill="rgba(212, 255, 40, 0.5)" className="font-mono uppercase">
+                  Cliff Unlock
+                </text>
+                <text x="10" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) + 17} textAnchor="start" fontSize="14" fill="rgba(212, 255, 40, 0.8)" className="font-mono font-bold">
+                  {formatTokenAmount(BigInt(Math.floor(Number(globalLock.allocation) * vestingData.cliffUnlockRatio)), decimals, symbol)}
+                </text>
+                <text x="10" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) + 35} textAnchor="start" fontSize="12" fill="rgba(212, 255, 40, 0.6)" className="font-mono">
+                  {(vestingData.cliffUnlockRatio * 100).toFixed(2)}%
+                </text>
+              </>
+            ) : (
+              <>
+                <text x="-20" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) - 25} textAnchor="end" fontSize="9" fill="rgba(212, 255, 40, 0.5)" className="font-mono uppercase">
+                  Cliff Unlock
+                </text>
+                <text x="-20" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) - 10} textAnchor="end" fontSize="14" fill="rgba(212, 255, 40, 0.8)" className="font-mono font-bold">
+                  {formatTokenAmount(BigInt(Math.floor(Number(globalLock.allocation) * vestingData.cliffUnlockRatio)), decimals, symbol)}
+                </text>
+                <text x="-20" y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) + 8} textAnchor="end" fontSize="12" fill="rgba(212, 255, 40, 0.6)" className="font-mono">
+                  {(vestingData.cliffUnlockRatio * 100).toFixed(2)}%
+                </text>
+              </>
+            )
           )}
 
-          <text x="-20" y={graphData.graphHeight + 5} textAnchor="end" fontSize="14" fill="rgba(242, 238, 225, 0.6)" className="font-mono">
-            0 {symbol}
-          </text>
-          <text x="-20" y={graphData.graphHeight + 22} textAnchor="end" fontSize="12" fill="rgba(242, 238, 225, 0.4)" className="font-mono">
-            0%
-          </text>
 
           {/* Vesting area */}
           <path
@@ -282,15 +308,15 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
             if (graphData.startEqualsCliff && graphData.cliffEqualsEnd) {
               // All three are the same
               if (index === 0) {
-                label = "Start/Cliff/End"
+                label = "Unlock Start/End"
                 textAnchor = "start"
                 labelColor = "rgba(212, 255, 40, 0.8)"
               }
             } else if (graphData.startEqualsCliff) {
               // Start = Cliff
               if (index === 0) {
-                label = "Start/Cliff"
-                textAnchor = "start"
+                label = "Unlock Start Time"
+                textAnchor = "middle"
                 labelColor = "rgba(212, 255, 40, 0.8)"
               } else if (index === 1) {
                 label = "End"
@@ -362,6 +388,33 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
                 opacity="0.6"
               />
 
+              {/* Horizontal line to Y-axis showing vested amount */}
+              {graphData.currentY < graphData.graphHeight && (
+                <>
+                  <line
+                    x1="0"
+                    y1={graphData.currentY}
+                    x2={graphData.nowPosition}
+                    y2={graphData.currentY}
+                    stroke="#2BFAE9"
+                    strokeWidth="2"
+                    strokeDasharray="5,5"
+                    opacity="0.6"
+                  />
+                  {/* Vested amount label on Y-axis */}
+                  <text
+                    x="-10"
+                    y={graphData.currentY + 4}
+                    textAnchor="end"
+                    fontSize="12"
+                    fill="#2BFAE9"
+                    className="font-mono font-bold"
+                  >
+                    {formatTokenAmount(vestingData.currentVestedAmount, decimals, symbol)}
+                  </text>
+                </>
+              )}
+
               {/* Current position dot */}
               <circle
                 cx={graphData.nowPosition}
@@ -385,127 +438,101 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
                 NOW
               </text>
 
-              {/* Time remaining from NOW */}
-              <g>
-                {/* NOW → Cliff */}
-                {graphData.timeNowToCliff > 0 && (
-                  <text
-                    x={graphData.nowPosition}
-                    y="-30"
-                    textAnchor="middle"
-                    fontSize="10"
-                    fill="#D4FF28"
-                    className="font-mono font-bold"
-                  >
-                    {graphData.formatTimeRemaining(graphData.timeNowToCliff)} → Cliff
-                  </text>
-                )}
-
-                {/* NOW → End */}
-                {graphData.timeNowToEnd > 0 && (
-                  <text
-                    x={graphData.nowPosition}
-                    y={graphData.timeNowToCliff > 0 ? "-15" : "-30"}
-                    textAnchor="middle"
-                    fontSize="10"
-                    fill="#FF2DF4"
-                    className="font-mono font-bold"
-                  >
-                    {graphData.formatTimeRemaining(graphData.timeNowToEnd)} → End
-                  </text>
-                )}
-              </g>
             </g>
           )}
 
-          {/* Time period labels - Always shown */}
-          {/* Start to Cliff duration */}
-          <g>
-            <text
-              x={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth / 2}
-              y={graphData.graphHeight + 65}
-              textAnchor="middle"
-              fontSize="10"
-              fill="#D4FF28"
-              className="font-mono font-bold"
-            >
-              {graphData.formatTimeRemaining(graphData.timeStartToCliff)}
-            </text>
-            <text
-              x={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth / 2}
-              y={graphData.graphHeight + 78}
-              textAnchor="middle"
-              fontSize="8"
-              fill="rgba(212, 255, 40, 0.6)"
-              className="font-mono"
-            >
-              (Start → Cliff)
-            </text>
-          </g>
+          {/* Time period labels */}
+          {/* Now to Start - only show when now is before start */}
+          {graphData.nowBeforeStart && (
+            <g>
+              <text
+                x={graphData.nowPosition + (graphData.startX - graphData.nowPosition) / 2}
+                y={graphData.graphHeight + 65}
+                textAnchor="middle"
+                fontSize="10"
+                fill="#2BFAE9"
+                className="font-mono font-bold"
+              >
+                {graphData.formatTimeRemaining(graphData.timeNowToStart)}
+              </text>
+              <text
+                x={graphData.nowPosition + (graphData.startX - graphData.nowPosition) / 2}
+                y={graphData.graphHeight + 78}
+                textAnchor="middle"
+                fontSize="8"
+                fill="rgba(43, 250, 233, 0.6)"
+                className="font-mono"
+              >
+                (Until Vesting Starts)
+              </text>
+            </g>
+          )}
 
-          {/* Cliff to End duration */}
+          {/* Lock Duration (Start to End) */}
           <g>
             <text
-              x={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth + (graphData.graphWidth - ((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth) / 2}
+              x={graphData.startX + (graphData.graphWidth - graphData.startX) / 2}
               y={graphData.graphHeight + 65}
               textAnchor="middle"
               fontSize="10"
               fill="#FF2DF4"
               className="font-mono font-bold"
             >
-              {graphData.formatTimeRemaining(graphData.timeCliffToEnd)}
+              {graphData.formatTimeRemaining(graphData.lockDuration)}
             </text>
             <text
-              x={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth + (graphData.graphWidth - ((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth) / 2}
+              x={graphData.startX + (graphData.graphWidth - graphData.startX) / 2}
               y={graphData.graphHeight + 78}
               textAnchor="middle"
               fontSize="8"
               fill="rgba(255, 45, 244, 0.6)"
               className="font-mono"
             >
-              (Cliff → End)
+              (Vesting Duration)
             </text>
           </g>
 
-          {/* Cliff unlock indicator */}
-          <g>
-            <line
-              x1={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth}
-              y1={graphData.graphHeight}
-              x2={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth}
-              y2={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight)}
-              stroke="#D4FF28"
-              strokeWidth="2"
-              strokeDasharray="3,3"
-              opacity="0.5"
-            />
-            <text
-              x={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth + 10}
-              y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) - 10}
-              fontSize="10"
-              fill="#D4FF28"
-              className="font-mono font-bold"
-            >
-              {Math.round(vestingData.cliffUnlockRatio * 100)}%
-            </text>
-          </g>
+          {/* Cliff unlock indicator - only show when ratio > 0 */}
+          {vestingData.cliffUnlockRatio > 0.01 && (
+            <g>
+              <line
+                x1={graphData.cliffX}
+                y1={graphData.graphHeight}
+                x2={graphData.cliffX}
+                y2={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight)}
+                stroke="#D4FF28"
+                strokeWidth="2"
+                strokeDasharray="3,3"
+                opacity="0.5"
+              />
+              <text
+                x={graphData.cliffX + 10}
+                y={graphData.graphHeight - (vestingData.cliffUnlockRatio * graphData.graphHeight) - 10}
+                fontSize="10"
+                fill="#D4FF28"
+                className="font-mono font-bold"
+              >
+                {Math.round(vestingData.cliffUnlockRatio * 100)}%
+              </text>
+            </g>
+          )}
 
           {/* Date markers with vertical lines - Handle collisions */}
           {!graphData.startEqualsCliff && (
             <g>
               <line
-                x1="0"
+                x1={graphData.startX}
                 y1="0"
-                x2="0"
+                x2={graphData.startX}
                 y2={graphData.graphHeight}
                 stroke="rgba(242, 238, 225, 0.2)"
                 strokeWidth="1"
                 strokeDasharray="2,3"
               />
               <text
-                x="0"
+                x={graphData.startX}
                 y={graphData.graphHeight + 50}
-                textAnchor="start"
+                textAnchor={graphData.nowBeforeStart ? "middle" : "start"}
                 fontSize="9"
                 fill="rgba(242, 238, 225, 0.5)"
                 className="font-mono"
@@ -522,16 +549,16 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
           {!graphData.cliffEqualsEnd && !graphData.startEqualsCliff && (
             <g>
               <line
-                x1={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth}
+                x1={graphData.cliffX}
                 y1="0"
-                x2={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth}
+                x2={graphData.cliffX}
                 y2={graphData.graphHeight}
                 stroke="rgba(212, 255, 40, 0.4)"
                 strokeWidth="1"
                 strokeDasharray="2,3"
               />
               <text
-                x={((graphData.cliffTime - graphData.startTime) / (graphData.endTime - graphData.startTime)) * graphData.graphWidth}
+                x={graphData.cliffX}
                 y={graphData.graphHeight + 50}
                 textAnchor="middle"
                 fontSize="9"
@@ -579,18 +606,18 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
           {(graphData.startEqualsCliff || graphData.cliffEqualsEnd) && (
             <g>
               <line
-                x1={graphData.cliffEqualsEnd ? graphData.graphWidth : 0}
+                x1={graphData.cliffEqualsEnd ? graphData.graphWidth : graphData.startX}
                 y1="0"
-                x2={graphData.cliffEqualsEnd ? graphData.graphWidth : 0}
+                x2={graphData.cliffEqualsEnd ? graphData.graphWidth : graphData.startX}
                 y2={graphData.graphHeight}
                 stroke="rgba(212, 255, 40, 0.4)"
                 strokeWidth="1"
                 strokeDasharray="2,3"
               />
               <text
-                x={graphData.cliffEqualsEnd ? graphData.graphWidth : 0}
+                x={graphData.cliffEqualsEnd ? graphData.graphWidth : graphData.startX}
                 y={graphData.graphHeight + 50}
-                textAnchor={graphData.cliffEqualsEnd ? "end" : "start"}
+                textAnchor={graphData.cliffEqualsEnd ? "end" : (graphData.nowBeforeStart ? "middle" : "start")}
                 fontSize="9"
                 fill="rgba(212, 255, 40, 0.8)"
                 className="font-mono"
@@ -616,7 +643,7 @@ export const VestingGraph = ({ globalLock, className = "" }: VestingGraphProps) 
 
       {/* Note at the bottom */}
       <div className="mt-6 text-center text-xs text-parchment/60 font-oracle-standard">
-        <strong>Note:</strong> After cliff, tokens unlock linearly per Ethereum block.
+        <strong>Note:</strong> At the Unlock Start Time, tokens unlock linearly per Ethereum block.
       </div>
     </div>
   )

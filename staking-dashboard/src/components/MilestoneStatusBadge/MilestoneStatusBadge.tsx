@@ -33,9 +33,9 @@ export const MilestoneStatusBadge = ({
     [MilestoneStatus.Pending]:
       "This milestone has not been reached yet. Withdrawals are disabled.",
     [MilestoneStatus.Failed]:
-      "This milestone was not achieved. Control has transferred to Aztec Labs.",
+      "This milestone was not achieved. Withdrawals are disabled.",
     [MilestoneStatus.Succeeded]:
-      "This milestone has been successfully achieved. All operations are available.",
+      "This milestone has been successfully achieved.",
   }[status];
 
   const badge = (

@@ -29,7 +29,7 @@ import {
 } from "@/utils/atpFormatters";
 import type { ATPData } from "@/hooks/atp";
 import { isMATPData } from "@/hooks/atp/matp/matpTypes";
-import { useMilestoneStatus } from "@/hooks/atpRegistry/useMilestoneStatus";
+import { useMilestoneStatus, MilestoneStatus } from "@/hooks/atpRegistry/useMilestoneStatus";
 import { MilestoneStatusBadge } from "@/components/MilestoneStatusBadge";
 import { ERC20Abi } from "@/contracts/abis/ERC20";
 
@@ -186,7 +186,10 @@ export const ATPStakingCard = ({
     isApproveConfirming,
     refetchAllowance,
   } = useATPClaim(data);
-  const globalLockTimeDisplay = getTimeToClaimForATP(data);
+  // Get cached block timestamp for withdrawal eligibility check (refreshes every 60s)
+  const { blockTimestamp } = useBlockTimestamp();
+
+  const globalLockTimeDisplay = getTimeToClaimForATP(data, blockTimestamp);
   const { activationThreshold } = useRollupData();
 
   const {
@@ -217,9 +220,6 @@ export const ATPStakingCard = ({
         enabled: isNCATP && !!data.token && !!data.atpAddress,
       },
     });
-
-  // Get cached block timestamp for withdrawal eligibility check (refreshes every 60s)
-  const { blockTimestamp } = useBlockTimestamp();
 
   // Check NCATP staker status - uses block.timestamp for withdrawal eligibility
   const {
@@ -302,9 +302,19 @@ export const ATPStakingCard = ({
     return `${days} days`;
   };
 
+  // For MATPs: if time lock has passed but milestone is not Succeeded, show "Milestone still locked"
+  const getMATPlockDisplay = (): string => {
+    if (globalLockTimeDisplay === "Available now" && milestoneStatus !== MilestoneStatus.Succeeded) {
+      return "Milestone still locked";
+    }
+    return globalLockTimeDisplay;
+  };
+
   const timeToClaimDisplay = isNCATP
     ? getNCAtpUnlockDisplay()
-    : globalLockTimeDisplay;
+    : isMATP
+      ? getMATPlockDisplay()
+      : globalLockTimeDisplay;
 
   // Calculate remaining allocation after withdrawals and slashing
   // Total Funds = allocation - totalWithdrawn - totalSlashed
@@ -486,10 +496,6 @@ export const ATPStakingCard = ({
           <h3 className="font-md-thermochrome text-2xl font-medium text-chartreuse">
             Token Vault #{data.sequentialNumber || "?"}
           </h3>
-          {/* Factory badge - Hidden for now, uncomment to show factory source */}
-          {/* <span className="px-2 py-1 text-xs font-oracle-standard font-bold uppercase tracking-wider border bg-aqua/20 text-aqua border-aqua/40">
-            {getFactoryName(data.factoryAddress)}
-          </span> */}
           <span
             className={`px-2 py-1 text-xs font-oracle-standard font-bold uppercase tracking-wider border ${
               isFullyWithdrawn
@@ -503,10 +509,17 @@ export const ATPStakingCard = ({
           </span>
           {/* Milestone badge for MATPs */}
           {isMATP && (
-            <MilestoneStatusBadge
-              status={milestoneStatus}
-              isLoading={isMilestoneLoading}
-            />
+            <>
+              <MilestoneStatusBadge
+                status={milestoneStatus}
+                isLoading={isMilestoneLoading}
+              />
+              {data.milestoneId !== undefined && (
+                <span className="text-xs text-parchment/60 font-oracle-standard">
+                  Milestone {Number(data.milestoneId)}
+                </span>
+              )}
+            </>
           )}
           <TooltipIcon
             content="These tokens are locked in a Token Vault contract. Token Vaults are vesting contracts that release tokens according to predefined schedules or milestones."

@@ -17,8 +17,8 @@ const ATPCreatedEvent = parseAbiItem(
 const FACTORY_START_BLOCKS = {
   genesis: config.START_BLOCK || 0,
   auction: config.START_BLOCK || 0,
-  employee: config.EMPLOYEE_FACTORY_START_BLOCK || config.START_BLOCK || 0,
-  investor: config.INVESTOR_FACTORY_START_BLOCK || config.START_BLOCK || 0,
+  matp: config.MATP_FACTORY_START_BLOCK || config.START_BLOCK || 0,
+  latp: config.LATP_FACTORY_START_BLOCK || config.START_BLOCK || 0,
 };
 
 
@@ -78,25 +78,25 @@ export default createConfig({
     },
 
     /**
-     * ATP Factory - Employee contract
-     * Issues MATPs to employees
+     * ATP Factory - MATP contract
+     * Issues milestone-based ATPs (MATPs)
      */
-    ATPFactoryEmployee: {
+    ATPFactoryMATP: {
       chain: config.networkName,
       abi: ATP_ABI,
-      address: config.ATP_FACTORY_EMPLOYEE_ADDRESS as `0x${string}`,
-      startBlock: FACTORY_START_BLOCKS.employee,
+      address: config.ATP_FACTORY_MATP_ADDRESS as `0x${string}`,
+      startBlock: FACTORY_START_BLOCKS.matp,
     },
 
     /**
-     * ATP Factory - Investor contract
-     * Issues LATPs and MATPs to investors
+     * ATP Factory - LATP contract
+     * Issues linear vesting ATPs (LATPs) and MATPs
      */
-    ATPFactoryInvestor: {
+    ATPFactoryLATP: {
       chain: config.networkName,
       abi: ATP_ABI,
-      address: config.ATP_FACTORY_INVESTOR_ADDRESS as `0x${string}`,
-      startBlock: FACTORY_START_BLOCKS.investor,
+      address: config.ATP_FACTORY_LATP_ADDRESS as `0x${string}`,
+      startBlock: FACTORY_START_BLOCKS.latp,
     },
 
     /**
@@ -133,8 +133,8 @@ export default createConfig({
         address: [
           config.ATP_FACTORY_ADDRESS as `0x${string}`,
           config.ATP_FACTORY_AUCTION_ADDRESS as `0x${string}`,
-          config.ATP_FACTORY_EMPLOYEE_ADDRESS as `0x${string}`,
-          config.ATP_FACTORY_INVESTOR_ADDRESS as `0x${string}`,
+          config.ATP_FACTORY_MATP_ADDRESS as `0x${string}`,
+          config.ATP_FACTORY_LATP_ADDRESS as `0x${string}`,
         ],
         event: ATPCreatedEvent,
         parameter: "atp",

@@ -27,12 +27,16 @@ interface VestingCalculation {
 
 /**
  * Calculate vesting timeline and amounts based on globalLock parameters
+ * @param globalLock - Vesting schedule parameters
+ * @param blockTimestamp - Optional blockchain timestamp to use instead of Date.now()
  */
 export function useVestingCalculation(
-  globalLock: GlobalLock
+  globalLock: GlobalLock,
+  blockTimestamp?: bigint
 ): VestingCalculation {
   return useMemo(() => {
-    const now = getCurrentEpochSeconds()
+    // Use blockchain timestamp if provided, otherwise fall back to system time
+    const now = blockTimestamp ? Number(blockTimestamp) : getCurrentEpochSeconds()
     const timePoints: VestingTimePoint[] = []
     const totalAmount = globalLock.allocation
     const vestingStartTime = Number(globalLock.startTime)
@@ -111,5 +115,5 @@ export function useVestingCalculation(
       timeRemaining,
       currentVestedAmount
     }
-  }, [globalLock])
+  }, [globalLock, blockTimestamp])
 }
