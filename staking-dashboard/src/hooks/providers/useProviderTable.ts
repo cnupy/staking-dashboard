@@ -118,6 +118,7 @@ export const useProviderTable = () => {
   const [searchQuery, setSearchQuery] = useState("")
   const [sortField, setSortField] = useState<SortField>('totalStaked')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [hasUserSorted, setHasUserSorted] = useState(false)
   const tableTopRef = useRef<HTMLDivElement>(null)
 
   const itemsPerPage = 10
@@ -130,16 +131,17 @@ export const useProviderTable = () => {
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000)
   })
 
-  const providers = providersData?.providers ?? []
+  const providers = providersData?.providers
   const totalStaked = providersData?.totalStaked ?? ''
   const rawNotAssociatedStake = providersData?.notAssociatedStake
 
   // Format API data to match expected structure with percentages
   const allProviders = useMemo(() => {
+    const providerList = providers ?? []
     const networkTotalStake = parseFloat(totalStaked)
 
     // Sort by stake descending to calculate cumulative percentages
-    const sortedProviders = [...providers].sort((a, b) =>
+    const sortedProviders = [...providerList].sort((a, b) =>
       parseFloat(b.totalStaked ?? '0') - parseFloat(a.totalStaked ?? '0')
     )
 
@@ -181,6 +183,7 @@ export const useProviderTable = () => {
   }, [rawNotAssociatedStake, totalStaked, allProviders])
 
   const handleSort = (field: SortField) => {
+    setHasUserSorted(true)
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
     } else {
@@ -241,6 +244,7 @@ export const useProviderTable = () => {
 
     sortField,
     sortDirection,
+    hasUserSorted,
     handleSort,
 
     tableTopRef

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react"
 import {
   Table,
   TableBody,
@@ -34,10 +35,155 @@ interface ProviderTableProps {
   queueLengths?: Map<number, number>
   notAssociatedStake?: NotAssociatedStake
   providerConfigurations?: Map<number, ProviderConfiguration>
+  /** Number of top providers to collapse into a group row. Set to 0 to disable. */
+  topGroupSize?: number
+  /** Whether to show the decentralization separator banner. */
+  showDecentralizationBar?: boolean
+  /** Row count after which to place the decentralization bar when not grouped. */
+  decentralizationBarAfterCount?: number
+}
+
+interface ProviderRowProps {
+  provider: ProviderListItem
+  config?: ProviderConfiguration
+  myDelegations?: Map<number, bigint>
+  queueLengths?: Map<number, number>
+  decimals?: number
+  symbol?: string
+  isLoadingTokenDetails: boolean
+  onStakeClick: (provider: ProviderListItem, event: React.MouseEvent) => void
+}
+
+function DecentralizationBarRow() {
+  return (
+    <tr>
+      <td colSpan={6} className="p-0">
+        <div className="bg-chartreuse text-ink text-center py-0.5 px-4 text-xs font-oracle-standard font-medium">
+          Improve decentralization and network health by staking with a group below ↓
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function ProviderRow({
+  provider,
+  config,
+  myDelegations,
+  queueLengths,
+  decimals,
+  symbol,
+  isLoadingTokenDetails,
+  onStakeClick,
+}: ProviderRowProps) {
+  const navigate = useNavigate()
+  const displayAddress = config?.providerAdmin && config.providerAdmin !== zeroAddress
+    ? config.providerAdmin
+    : provider.address
+
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="flex items-center space-x-3">
+          <AvatarImage
+            src={provider.logo_url}
+            alt={`${provider.name} logo`}
+            size="md"
+          />
+          <div>
+            <button
+              onClick={() => navigate(`/providers/${provider.id}`)}
+              className="font-oracle-triple-book font-medium text-parchment hover:text-chartreuse transition-colors text-left"
+            >
+              {provider.name}
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-parchment/60 font-mono">
+                {displayAddress?.slice(0, 8)}...{displayAddress?.slice(-6)}
+              </span>
+              <CopyButton text={displayAddress || ''} size="sm" className="p-0.5" />
+            </div>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="font-mono text-sm text-left">
+          <div className="text-chartreuse font-bold text-base whitespace-nowrap">
+            {isLoadingTokenDetails ? (
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 border border-chartreuse/30 border-t-chartreuse rounded-full animate-spin"></div>
+                <span className="text-parchment/60">Loading...</span>
+              </div>
+            ) : decimals ? (
+              formatTokenAmount(stringToBigInt(provider.totalStaked), decimals, symbol)
+            ) : (
+              provider.totalStaked
+            )}
+          </div>
+          <div className="text-xs text-parchment/60">
+            {provider.percentage}
+          </div>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="space-y-1">
+          <div className="text-xs text-parchment/60 font-medium">
+            {provider.cumulativePercentage}
+          </div>
+          <div className="w-full bg-parchment/10 h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-parchment/30 h-full rounded-full"
+              style={{ width: provider.cumulativePercentage }}
+            />
+          </div>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="font-mono font-bold text-parchment">
+          {config?.providerTakeRate !== undefined
+            ? `${formatBipsToPercentage(config.providerTakeRate)}%`
+            : `${formatBipsToPercentage(provider.commission)}%`}
+        </div>
+      </TableCell>
+      <TableCell>
+        {(() => {
+          const myDelegation = myDelegations?.get(Number(provider.id)) || 0n
+          return myDelegation > 0n ? (
+            <div className="font-mono text-sm font-bold text-aqua">
+              {isLoadingTokenDetails ? "..." : decimals ? formatTokenAmount(myDelegation, decimals, symbol) : "-"}
+            </div>
+          ) : (
+            <div className="text-sm text-parchment/40">-</div>
+          )
+        })()}
+      </TableCell>
+      <TableCell>
+        {(() => {
+          const queueLength = queueLengths?.get(Number(provider.id)) ?? 0
+          const hasSequencerKeys = queueLength > 0
+
+          return (
+            <button
+              className={`px-3 py-1.5 font-oracle-standard font-bold text-xs uppercase tracking-wider transition-colors ${hasSequencerKeys
+                ? 'bg-chartreuse text-ink hover:bg-chartreuse/90'
+                : 'bg-parchment/20 text-parchment/40 cursor-not-allowed'
+                }`}
+              onClick={(e) => hasSequencerKeys && onStakeClick(provider, e)}
+              disabled={!hasSequencerKeys}
+              title={!hasSequencerKeys ? 'No sequencer keys available' : ''}
+            >
+              DELEGATE
+            </button>
+          )
+        })()}
+      </TableCell>
+    </TableRow>
+  )
 }
 
 /**
- * Table component for displaying staking providers with sorting and search
+ * Table component for displaying staking providers with sorting, search, and
+ * an optional top-group row that collapses the highest-stake providers.
  */
 export const ProviderTable = ({
   providers,
@@ -49,10 +195,42 @@ export const ProviderTable = ({
   myDelegations,
   queueLengths,
   notAssociatedStake,
-  providerConfigurations
+  providerConfigurations,
+  topGroupSize = 0,
+  showDecentralizationBar = false,
+  decentralizationBarAfterCount = 0,
 }: ProviderTableProps) => {
   const { symbol, decimals, isLoading: isLoadingTokenDetails } = useStakingAssetTokenDetails()
-  const navigate = useNavigate()
+  const [isGroupExpanded, setIsGroupExpanded] = useState(false)
+
+  // Collapse group whenever it resets (sort/page changes)
+  useEffect(() => {
+    setIsGroupExpanded(false)
+  }, [topGroupSize])
+
+  const shouldShowGroup = topGroupSize > 0 && providers.length > topGroupSize && !isGroupExpanded
+  const groupProviders = shouldShowGroup ? providers.slice(0, topGroupSize) : []
+  const restProviders = shouldShowGroup ? providers.slice(topGroupSize) : providers
+  const shouldShowInlineBar =
+    !shouldShowGroup &&
+    showDecentralizationBar &&
+    decentralizationBarAfterCount > 0 &&
+    providers.length > decentralizationBarAfterCount
+  const inlineTopProviders = shouldShowInlineBar ? providers.slice(0, decentralizationBarAfterCount) : []
+  const inlineBottomProviders = shouldShowInlineBar ? providers.slice(decentralizationBarAfterCount) : []
+
+  // Aggregate stats for the collapsed group row
+  const groupTotalStaked = groupProviders.reduce(
+    (sum, p) => sum + stringToBigInt(p.totalStaked),
+    0n,
+  )
+  const groupCumulativePercentage = groupProviders[groupProviders.length - 1]?.cumulativePercentage ?? '0%'
+  const groupMyStake = groupProviders.reduce(
+    (sum, p) => sum + (myDelegations?.get(Number(p.id)) ?? 0n),
+    0n,
+  )
+
+  const sharedRowProps = { decimals, symbol, isLoadingTokenDetails, onStakeClick, myDelegations, queueLengths }
 
   return (
     <Table>
@@ -203,113 +381,152 @@ export const ProviderTable = ({
             </TableRow>
           ))
         ) : providers.length > 0 ? (
-          providers.map((provider) => {
-            // Get on-chain configuration for this provider
-            const config = providerConfigurations?.get(Number(provider.id))
-            const displayAddress = config?.providerAdmin && config.providerAdmin !== zeroAddress
-              ? config.providerAdmin
-              : provider.address
-
-            return (
-              <TableRow key={provider.id}>
-                <TableCell>
-                  <div className="flex items-center space-x-3">
-                    <AvatarImage
-                      src={provider.logo_url}
-                      alt={`${provider.name} logo`}
-                      size="md"
-                    />
-                    <div>
-                      <button
-                        onClick={() => navigate(`/providers/${provider.id}`)}
-                        className="font-oracle-triple-book font-medium text-parchment hover:text-chartreuse transition-colors text-left"
-                      >
-                        {provider.name}
-                      </button>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-parchment/60 font-mono">
-                          {displayAddress?.slice(0, 8)}...{displayAddress?.slice(-6)}
-                        </span>
-                        <CopyButton text={displayAddress || ''} size="sm" className="p-0.5" />
+          <>
+            {/* ── Top-group row ── */}
+            {shouldShowGroup && (
+              <>
+                {/* Collapsed / expanded toggle row */}
+                <TableRow
+                  className="cursor-pointer select-none"
+                  onClick={() => setIsGroupExpanded(true)}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      {/* Stacked provider avatars */}
+                      <div className="flex items-center">
+                        {groupProviders.slice(0, 3).map((p, i) => (
+                          <div
+                            key={p.id}
+                            className="rounded-full border-2 border-parchment/10"
+                            style={{ marginLeft: i > 0 ? '-8px' : '0', zIndex: 3 - i, position: 'relative' }}
+                          >
+                            <AvatarImage src={p.logo_url} alt={p.name} size="sm" />
+                          </div>
+                        ))}
+                        {topGroupSize > 3 && (
+                          <div
+                            className="w-8 h-8 rounded-full bg-parchment/20 border-2 border-parchment/10 flex items-center justify-center text-xs font-bold text-parchment"
+                            style={{ marginLeft: '-8px', zIndex: 0, position: 'relative' }}
+                          >
+                            +{topGroupSize - 3}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="font-mono text-sm text-left">
-                    <div className="text-chartreuse font-bold text-base whitespace-nowrap">
-                      {isLoadingTokenDetails ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 border border-chartreuse/30 border-t-chartreuse rounded-full animate-spin"></div>
-                          <span className="text-parchment/60">Loading...</span>
+
+                      <div>
+                        <div className="text-xs text-parchment/50 font-oracle-triple-medium tracking-wide">
+                          1–{topGroupSize}
                         </div>
-                      ) : decimals ? (
-                        formatTokenAmount(stringToBigInt(provider.totalStaked), decimals, symbol)
-                      ) : (
-                        provider.totalStaked
-                      )}
-                    </div>
-                    <div className="text-xs text-parchment/60">
-                      {provider.percentage}
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="space-y-1">
-                    <div className="text-xs text-parchment/60 font-medium">
-                      {provider.cumulativePercentage}
-                    </div>
-                    {/* Cumulative progress bar */}
-                    <div className="w-full bg-parchment/10 h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-parchment/30 h-full rounded-full"
-                        style={{ width: provider.cumulativePercentage }}
+                        <div className="font-oracle-triple-book font-medium text-parchment">
+                          Top {topGroupSize} providers
+                        </div>
+                      </div>
+
+                      <Icon
+                        name="chevronDown"
+                        size="md"
+                        className="text-parchment/50"
                       />
                     </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="font-mono font-bold text-parchment">
-                    {config?.providerTakeRate !== undefined
-                      ? `${formatBipsToPercentage(config.providerTakeRate)}%`
-                      : `${formatBipsToPercentage(provider.commission)}%`}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {(() => {
-                    const myDelegation = myDelegations?.get(Number(provider.id)) || 0n
-                    return myDelegation > 0n ? (
+                  </TableCell>
+
+                  {/* Combined total stake */}
+                  <TableCell>
+                    <div className="font-mono text-sm text-left">
+                      <div className="text-chartreuse font-bold text-base whitespace-nowrap">
+                        {isLoadingTokenDetails ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 border border-chartreuse/30 border-t-chartreuse rounded-full animate-spin"></div>
+                            <span className="text-parchment/60">Loading...</span>
+                          </div>
+                        ) : decimals ? (
+                          formatTokenAmount(groupTotalStaked, decimals, symbol)
+                        ) : (
+                          String(groupTotalStaked)
+                        )}
+                      </div>
+                      <div className="text-xs text-parchment/60">combined</div>
+                    </div>
+                  </TableCell>
+
+                  {/* Cumulative % of the last provider in the group */}
+                  <TableCell>
+                    <div className="space-y-1">
+                      <div className="text-xs text-parchment/60 font-medium">
+                        {groupCumulativePercentage}
+                      </div>
+                      <div className="w-full bg-parchment/10 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-parchment/30 h-full rounded-full"
+                          style={{ width: groupCumulativePercentage }}
+                        />
+                      </div>
+                    </div>
+                  </TableCell>
+
+                  {/* Commission – not meaningful for a group */}
+                  <TableCell>
+                    <div className="text-sm text-parchment/40">–</div>
+                  </TableCell>
+
+                  {/* My combined stake across group providers */}
+                  <TableCell>
+                    {groupMyStake > 0n ? (
                       <div className="font-mono text-sm font-bold text-aqua">
-                        {isLoadingTokenDetails ? "..." : decimals ? formatTokenAmount(myDelegation, decimals, symbol) : "-"}
+                        {isLoadingTokenDetails ? "..." : decimals ? formatTokenAmount(groupMyStake, decimals, symbol) : "–"}
                       </div>
                     ) : (
-                      <div className="text-sm text-parchment/40">-</div>
-                    )
-                  })()}
-                </TableCell>
-                <TableCell>
-                  {(() => {
-                    const queueLength = queueLengths?.get(Number(provider.id)) ?? 0
-                    const hasSequencerKeys = queueLength > 0
+                      <div className="text-sm text-parchment/40">–</div>
+                    )}
+                  </TableCell>
 
-                    return (
-                      <button
-                        className={`px-3 py-1.5 font-oracle-standard font-bold text-xs uppercase tracking-wider transition-colors ${hasSequencerKeys
-                          ? 'bg-chartreuse text-ink hover:bg-chartreuse/90'
-                          : 'bg-parchment/20 text-parchment/40 cursor-not-allowed'
-                          }`}
-                        onClick={(e) => hasSequencerKeys && onStakeClick(provider, e)}
-                        disabled={!hasSequencerKeys}
-                        title={!hasSequencerKeys ? 'No sequencer keys available' : ''}
-                      >
-                        DELEGATE
-                      </button>
-                    )
-                  })()}
-                </TableCell>
-              </TableRow>
-            )
-          })
+                  {/* No direct action on a group */}
+                  <TableCell />
+                </TableRow>
+
+
+              </>
+            )}
+
+            {/* Decentralization separator */}
+            {showDecentralizationBar && !shouldShowInlineBar && (
+              <DecentralizationBarRow />
+            )}
+
+            {/* Individual provider rows (providers after the group, or all if no group) */}
+            {shouldShowInlineBar ? (
+              <>
+                {inlineTopProviders.map((provider) => (
+                  <ProviderRow
+                    key={provider.id}
+                    provider={provider}
+                    config={providerConfigurations?.get(Number(provider.id))}
+                    {...sharedRowProps}
+                  />
+                ))}
+
+                <DecentralizationBarRow />
+
+                {inlineBottomProviders.map((provider) => (
+                  <ProviderRow
+                    key={provider.id}
+                    provider={provider}
+                    config={providerConfigurations?.get(Number(provider.id))}
+                    {...sharedRowProps}
+                  />
+                ))}
+              </>
+            ) : (
+              restProviders.map((provider) => (
+                <ProviderRow
+                  key={provider.id}
+                  provider={provider}
+                  config={providerConfigurations?.get(Number(provider.id))}
+                  {...sharedRowProps}
+                />
+              ))
+            )}
+          </>
         ) : (
           <TableRow>
             <TableCell colSpan={6} className="text-center py-12">

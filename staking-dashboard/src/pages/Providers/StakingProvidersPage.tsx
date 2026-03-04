@@ -1,4 +1,3 @@
-import { useMemo } from "react"
 import { Link } from "react-router-dom"
 import { Icon } from "@/components/Icon"
 import { DecentralizationDisclaimer } from "@/components/DecentralizationDisclaimer"
@@ -7,9 +6,8 @@ import { Pagination } from "@/components/Pagination"
 import { ProviderSearch } from "@/components/Provider/ProviderSearch"
 import { ProviderTable } from "@/components/Provider/ProviderTable"
 import { useProviderTable } from "@/hooks/providers/useProviderTable"
+import { useProviderTableDisplayData } from "@/hooks/providers/useProviderTableDisplayData"
 import { useProviderDisclaimer } from "@/hooks/providers/useProviderDisclaimer"
-import { useAggregatedStakingData } from "@/hooks/atp/useAggregatedStakingData"
-import { useMultipleProviderQueueLengths, useMultipleProviderConfigurations } from "@/hooks/stakingRegistry"
 import { applyHeroItalics } from "@/utils/typographyUtils"
 
 export default function StakingProvidersPage() {
@@ -23,6 +21,7 @@ export default function StakingProvidersPage() {
     handleSearchChange,
     sortField,
     sortDirection,
+    hasUserSorted,
     handleSort,
     isLoading,
     notAssociatedStake,
@@ -36,44 +35,21 @@ export default function StakingProvidersPage() {
     handleDisclaimerCancel
   } = useProviderDisclaimer(allProviders)
 
-  const { delegationBreakdown, directStakeBreakdown, erc20DelegationBreakdown } = useAggregatedStakingData()
-
-  // Create a map of providerId to total delegated amount (excluding failed deposits and unstaked)
-  // Includes both ATP delegations, direct stakes, and ERC20 delegations
-  const myDelegations = useMemo(() => {
-    const delegationMap = new Map<number, bigint>()
-
-    // Add ATP delegations (exclude failed and unstaked)
-    delegationBreakdown
-      .filter(delegation => !delegation.hasFailedDeposit && delegation.status !== 'UNSTAKED')
-      .forEach(delegation => {
-        const current = delegationMap.get(delegation.providerId) || 0n
-        delegationMap.set(delegation.providerId, current + delegation.stakedAmount)
-      })
-
-    // Add direct stakes that match provider self-stakes (exclude failed and unstaked)
-    directStakeBreakdown
-      .filter(stake => stake.providerId !== undefined && !stake.hasFailedDeposit && stake.status !== 'UNSTAKED')
-      .forEach(stake => {
-        const current = delegationMap.get(stake.providerId!) || 0n
-        delegationMap.set(stake.providerId!, current + stake.stakedAmount)
-      })
-
-    // Add ERC20 delegations (exclude failed and unstaked)
-    erc20DelegationBreakdown
-      .filter(delegation => !delegation.hasFailedDeposit && delegation.status !== 'UNSTAKED')
-      .forEach(delegation => {
-        const current = delegationMap.get(delegation.providerId) || 0n
-        delegationMap.set(delegation.providerId, current + delegation.stakedAmount)
-      })
-
-    return delegationMap
-  }, [delegationBreakdown, directStakeBreakdown, erc20DelegationBreakdown])
-
-  // Get queue lengths and configurations for all providers
-  const providerIds = useMemo(() => providers.map(v => Number(v.id)), [providers])
-  const { queueLengths } = useMultipleProviderQueueLengths(providerIds)
-  const { configurations } = useMultipleProviderConfigurations(providerIds)
+  const {
+    myDelegations,
+    queueLengths,
+    configurations,
+    topGroupSize,
+    showDecentralizationBar,
+    topGroupSizeThreshold,
+  } = useProviderTableDisplayData({
+    providers,
+    sortField,
+    sortDirection,
+    currentPage,
+    searchQuery,
+    hasUserSorted,
+  })
 
   return (
     <>
@@ -131,6 +107,9 @@ export default function StakingProvidersPage() {
           queueLengths={queueLengths}
           notAssociatedStake={notAssociatedStake}
           providerConfigurations={configurations}
+          topGroupSize={topGroupSize}
+          showDecentralizationBar={showDecentralizationBar}
+          decentralizationBarAfterCount={topGroupSizeThreshold}
         />
       </div>
 
