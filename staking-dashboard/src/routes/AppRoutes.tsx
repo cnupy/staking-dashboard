@@ -1,4 +1,4 @@
-// routes/AppRoutes.jsx
+// routes/AppRoutes.tsx
 import { Navigate, Route, Routes } from "react-router-dom"
 import SharedLayout from "../layouts/SharedLayout"
 import BaseLayout from "../layouts/BaseLayout"
