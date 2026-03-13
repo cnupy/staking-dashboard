@@ -1,0 +1,23 @@
+/**
+ * External Governance Frontends Configuration
+ *
+ * This file contains the list of external governance frontends that users
+ * can be directed to. Update this list as new frontends become available.
+ */
+
+export interface ExternalFrontend {
+  /** Display name of the frontend */
+  name: string;
+  /** Organization hosting this frontend */
+  hostedBy: string;
+  /** URL to the frontend - undefined means "Coming Soon" */
+  url?: string;
+}
+
+export const EXTERNAL_GOVERNANCE_FRONTENDS: ExternalFrontend[] = [
+  {
+    name: "Aztec Governance",
+    hostedBy: "Nethermind",
+    url: undefined, // Coming soon - replace with URL when live: "http://aztecgov.nethermind.io/"
+  },
+];

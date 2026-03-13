@@ -1,0 +1,1 @@
+export { ExternalGovernanceModal } from "./ExternalGovernanceModal";

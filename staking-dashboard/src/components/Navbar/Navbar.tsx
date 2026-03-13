@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Icon } from "@/components/Icon"
 import { CustomConnectButton } from "../CustomConnectButton"
+import { ExternalGovernanceModal } from "@/components/ExternalGovernanceModal"
 
 /**
  * Main navigation bar component
@@ -9,12 +10,7 @@ import { CustomConnectButton } from "../CustomConnectButton"
  */
 export const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-
-  const menuItems = [
-    { name: "POSITIONS", href: "/my-position" },
-    { name: "GOVERNANCE", href: "/governance" },
-    { name: "DOCS", href: "https://docs.aztec.network/" },
-  ]
+  const [isGovernanceModalOpen, setIsGovernanceModalOpen] = useState(false)
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen)
@@ -36,27 +32,26 @@ export const Navbar = () => {
           </Link>
 
           <div className="hidden md:flex items-center space-x-6 lg:space-x-8">
-            {menuItems.map((item) =>
-              item.href.startsWith("/") ? (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className="font-oracle-standard text-sm uppercase tracking-wider text-parchment/80 hover:text-chartreuse transition-colors font-medium"
-                >
-                  {item.name}
-                </Link>
-              ) : (
-                <a
-                  key={item.name}
-                  href={item.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-oracle-standard text-sm uppercase tracking-wider text-parchment/80 hover:text-chartreuse transition-colors font-medium"
-                >
-                  {item.name}
-                </a>
-              )
-            )}
+            <Link
+              to="/my-position"
+              className="font-oracle-standard text-sm uppercase tracking-wider text-parchment/80 hover:text-chartreuse transition-colors font-medium"
+            >
+              POSITIONS
+            </Link>
+            <button
+              onClick={() => setIsGovernanceModalOpen(true)}
+              className="font-oracle-standard text-sm uppercase tracking-wider text-parchment/80 hover:text-chartreuse transition-colors font-medium"
+            >
+              GOVERNANCE
+            </button>
+            <a
+              href="https://docs.aztec.network/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-oracle-standard text-sm uppercase tracking-wider text-parchment/80 hover:text-chartreuse transition-colors font-medium"
+            >
+              DOCS
+            </a>
             <CustomConnectButton size="sm" />
           </div>
 
@@ -77,35 +72,42 @@ export const Navbar = () => {
       {isMenuOpen && (
         <div className="md:hidden bg-ink/95 backdrop-blur-md border-t border-parchment/10 fixed top-20 left-0 right-0 max-h-[calc(100vh-5rem)] overflow-y-auto">
           <div className="px-4 py-6 space-y-6">
-            {menuItems.map((item) =>
-              item.href.startsWith("/") ? (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  onClick={closeMenu}
-                  className="block font-oracle-standard text-base uppercase tracking-wider text-parchment hover:text-chartreuse transition-colors font-medium py-2"
-                >
-                  {item.name}
-                </Link>
-              ) : (
-                <a
-                  key={item.name}
-                  href={item.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={closeMenu}
-                  className="block font-oracle-standard text-base uppercase tracking-wider text-parchment hover:text-chartreuse transition-colors font-medium py-2"
-                >
-                  {item.name}
-                </a>
-              )
-            )}
+            <Link
+              to="/my-position"
+              onClick={closeMenu}
+              className="block font-oracle-standard text-base uppercase tracking-wider text-parchment hover:text-chartreuse transition-colors font-medium py-2"
+            >
+              POSITIONS
+            </Link>
+            <button
+              onClick={() => {
+                closeMenu()
+                setIsGovernanceModalOpen(true)
+              }}
+              className="block font-oracle-standard text-base uppercase tracking-wider text-parchment hover:text-chartreuse transition-colors font-medium py-2 text-left w-full"
+            >
+              GOVERNANCE
+            </button>
+            <a
+              href="https://docs.aztec.network/"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={closeMenu}
+              className="block font-oracle-standard text-base uppercase tracking-wider text-parchment hover:text-chartreuse transition-colors font-medium py-2"
+            >
+              DOCS
+            </a>
             <div className="pt-4 border-t border-parchment/10">
               <CustomConnectButton fullWidth size="lg" />
             </div>
           </div>
         </div>
       )}
+
+      <ExternalGovernanceModal
+        isOpen={isGovernanceModalOpen}
+        onClose={() => setIsGovernanceModalOpen(false)}
+      />
     </nav>
   )
 };
