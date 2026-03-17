@@ -18,6 +18,6 @@ export const EXTERNAL_GOVERNANCE_FRONTENDS: ExternalFrontend[] = [
   {
     name: "Aztec Governance",
     hostedBy: "Nethermind",
-    url: undefined, // Coming soon - replace with URL when live: "http://aztecgov.nethermind.io/"
+    url: "http://aztecgov.nethermind.io/",
   },
 ];
