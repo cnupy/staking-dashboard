@@ -50,10 +50,11 @@ get_contract_addresses() {
     ATP_REGISTRY_AUCTION_ADDRESS="${ATP_REGISTRY_AUCTION_ADDRESS:-}"
     ATP_FACTORY_AUCTION_ADDRESS="${ATP_FACTORY_AUCTION_ADDRESS:-}"
     STAKING_REGISTRY_ADDRESS="${STAKING_REGISTRY_ADDRESS:-}"
-    ROLLUP_ADDRESS="${ROLLUP_ADDRESS:-}"
+    REGISTRY_ADDRESS="${REGISTRY_ADDRESS:-}"
     START_BLOCK="${START_BLOCK:-0}"
     MATP_FACTORY_START_BLOCK="${MATP_FACTORY_START_BLOCK:-0}"
     LATP_FACTORY_START_BLOCK="${LATP_FACTORY_START_BLOCK:-0}"
+    REGISTRY_START_BLOCK="${REGISTRY_START_BLOCK:-0}"
     return 0
   fi
 
@@ -82,14 +83,16 @@ get_contract_addresses() {
 
     # other
     STAKING_REGISTRY_ADDRESS=$(cat $contract_addresses_file | jq -r '.stakingRegistry')
-    ROLLUP_ADDRESS=$(cat $contract_addresses_file | jq -r '.rollupAddress')
+    REGISTRY_ADDRESS=$(cat $contract_addresses_file | jq -r '.registryAddress')
 
     # For dev environment, use 0 to catch all events
     # For other environments, use atpFactoryDeploymentBlock as the starting point
     if [ "$environment" = "dev" ]; then
       START_BLOCK=0
+      REGISTRY_START_BLOCK=0
     else
       START_BLOCK=$(cat $contract_addresses_file | jq -r '.atpFactoryDeploymentBlock // 0')
+      REGISTRY_START_BLOCK=$(cat $contract_addresses_file | jq -r '.registryDeploymentBlock // 0')
     fi
     return 0
   fi
@@ -159,10 +162,11 @@ ATP_FACTORY_AUCTION_ADDRESS=${ATP_FACTORY_AUCTION_ADDRESS}
 ATP_FACTORY_MATP_ADDRESS=${ATP_FACTORY_MATP_ADDRESS}
 ATP_FACTORY_LATP_ADDRESS=${ATP_FACTORY_LATP_ADDRESS}
 STAKING_REGISTRY_ADDRESS=${STAKING_REGISTRY_ADDRESS}
-ROLLUP_ADDRESS=${ROLLUP_ADDRESS}
+REGISTRY_ADDRESS=${REGISTRY_ADDRESS}
 
 # Ponder settings
 START_BLOCK=${START_BLOCK}
+REGISTRY_START_BLOCK=${REGISTRY_START_BLOCK}
 
 # API
 PORT=${PORT}
@@ -198,7 +202,8 @@ ATP_FACTORY_AUCTION_ADDRESS=${ATP_FACTORY_AUCTION_ADDRESS}
 ATP_FACTORY_MATP_ADDRESS=${ATP_FACTORY_MATP_ADDRESS}
 ATP_FACTORY_LATP_ADDRESS=${ATP_FACTORY_LATP_ADDRESS}
 STAKING_REGISTRY_ADDRESS=${STAKING_REGISTRY_ADDRESS}
-ROLLUP_ADDRESS=${ROLLUP_ADDRESS}
+REGISTRY_ADDRESS=${REGISTRY_ADDRESS}
+REGISTRY_START_BLOCK=${REGISTRY_START_BLOCK}
 
 # Indexer settings
 START_BLOCK=${DEFAULT_START_BLOCK}
@@ -355,6 +360,7 @@ function deploy() {
   START_BLOCK="${START_BLOCK:-0}"
   MATP_FACTORY_START_BLOCK="${MATP_FACTORY_START_BLOCK:-0}"
   LATP_FACTORY_START_BLOCK="${LATP_FACTORY_START_BLOCK:-0}"
+  REGISTRY_START_BLOCK="${REGISTRY_START_BLOCK:-0}"
 
   # Initialize Terraform with the S3 backend
   (cd terraform && terraform init \
@@ -376,7 +382,8 @@ function deploy() {
     -var=atp_factory_matp_address=$ATP_FACTORY_MATP_ADDRESS \
     -var=atp_factory_latp_address=$ATP_FACTORY_LATP_ADDRESS \
     -var=staking_registry_address=$STAKING_REGISTRY_ADDRESS \
-    -var=rollup_address=$ROLLUP_ADDRESS \
+    -var=registry_address=$REGISTRY_ADDRESS \
+    -var=registry_start_block=$REGISTRY_START_BLOCK \
     -var=start_block=$START_BLOCK \
     -var=matp_factory_start_block=$MATP_FACTORY_START_BLOCK \
     -var=latp_factory_start_block=$LATP_FACTORY_START_BLOCK \
@@ -487,8 +494,8 @@ case $ACTION in
     echo "    ATP_FACTORY_ADDRESS, ATP_FACTORY_AUCTION_ADDRESS"
     echo "    ATP_FACTORY_MATP_ADDRESS, ATP_FACTORY_LATP_ADDRESS"
     echo "    ATP_REGISTRY_ADDRESS, ATP_REGISTRY_AUCTION_ADDRESS"
-    echo "    STAKING_REGISTRY_ADDRESS, ROLLUP_ADDRESS"
-    echo "    START_BLOCK (optional, defaults to 0)"
+    echo "    STAKING_REGISTRY_ADDRESS, REGISTRY_ADDRESS"
+    echo "    START_BLOCK, REGISTRY_START_BLOCK (optional, defaults to 0)"
       echo ""
     echo "  For production contract addresses, contact the Aztec team."
       ;;

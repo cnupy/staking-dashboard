@@ -6,7 +6,7 @@ import { getProviderMetadata } from '../../../utils/provider-metadata';
 import type { ProviderDetailsResponse } from '../../types/provider.types';
 import { fetchFailedDeposits, filterValidStakes } from '../../../utils/failed-deposits';
 import { getActivationThreshold } from '../../../utils/rollup';
-import { config } from '../../../config';
+import { getCanonicalRollupAddress } from '../../utils/canonical-rollup';
 import { getPublicClient } from '../../../utils/viem-client';
 import {
   provider,
@@ -26,8 +26,9 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
     const id = c.req.param('id');
     const client = getPublicClient();
 
+    const rollupAddress = await getCanonicalRollupAddress(client);
     const [activationThreshold, providerData, allAtpDelegationsCount, allErc20DelegationsCount, allDirectStakesCount, allFailedDepositCount] = await Promise.all([
-      getActivationThreshold(config.ROLLUP_ADDRESS, client),
+      getActivationThreshold(rollupAddress, client),
       db.select().from(provider).where(eq(provider.providerIdentifier, id)).limit(1),
       db.select({ count: count() }).from(stakedWithProvider),
       db.select({ count: count() }).from(erc20StakedWithProvider),

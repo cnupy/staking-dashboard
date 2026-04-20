@@ -425,3 +425,23 @@ export const tokensWithdrawnToBeneficiary = onchainTable("tokens_withdrawn_to_be
   atpAddressIdx: index().on(table.atpAddress),
   stakerAddressIdx: index().on(table.stakerAddress),
 }));
+
+/**
+ * RollupVersion
+ * Every rollup the Aztec Registry has made canonical via addRollup().
+ * Populated from CanonicalRollupUpdated events; the latest row (by blockNumber)
+ * is the current canonical rollup. Used by /api/rollups so the frontend doesn't
+ * have to make its own Registry RPC calls at boot, and so historical rollup
+ * addresses are available for future cross-rollup claim flows.
+ */
+export const rollupVersion = onchainTable("rollup_version", (t) => ({
+  version: t.bigint().primaryKey(),
+  address: t.hex().notNull(),
+  blockNumber: t.bigint().notNull(),
+  txHash: t.hex().notNull(),
+  logIndex: t.integer().notNull(),
+  timestamp: t.bigint().notNull(),
+}), (table) => ({
+  addressIdx: index().on(table.address),
+  blockNumberIdx: index().on(table.blockNumber),
+}));

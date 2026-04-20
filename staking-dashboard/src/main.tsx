@@ -16,8 +16,15 @@ import { AlertProvider } from "./contexts/AlertContext.tsx";
 import { TermsModalProvider } from "./contexts/TermsModalContext.tsx";
 import { CustomAvatar } from "./components/CustomAvatar/CustomAvatar.tsx";
 import { Alert } from "./components/Alert";
+import { initRollupVersions } from "./contracts";
 
 const queryClient = new QueryClient();
+
+// Resolve the canonical rollup (and historical rollup versions) from the
+// indexer's /api/rollups endpoint before rendering, so every downstream hook
+// can read contracts.rollup.address synchronously. Rollup upgrades no longer
+// require a code change: just a page reload.
+await initRollupVersions();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

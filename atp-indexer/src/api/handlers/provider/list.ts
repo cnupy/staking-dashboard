@@ -6,7 +6,7 @@ import { getAllProviderMetadata } from '../../../utils/provider-metadata';
 import type { ProviderListResponse } from '../../types/provider.types';
 import { fetchFailedDeposits, markStakesWithFailedDeposits } from '../../../utils/failed-deposits';
 import { getActivationThreshold } from '../../../utils/rollup';
-import { config } from '../../../config';
+import { getCanonicalRollupAddress } from '../../utils/canonical-rollup';
 import { getPublicClient } from '../../../utils/viem-client';
 import {
   provider,
@@ -27,8 +27,9 @@ export async function handleProviderList(c: Context): Promise<Response> {
     // Get provider list of IDs from JSON
     const providerIds = Array.from(metadata.keys());
 
+    const rollupAddress = await getCanonicalRollupAddress(client);
     const [activationThreshold, dbProviders, atpDelegations, erc20Delegations, allDirectStakes] = await Promise.all([
-      getActivationThreshold(config.ROLLUP_ADDRESS, client),
+      getActivationThreshold(rollupAddress, client),
       db.select().from(provider).where(inArray(provider.providerIdentifier, providerIds)),
       db.select({
         providerIdentifier: stakedWithProvider.providerIdentifier,

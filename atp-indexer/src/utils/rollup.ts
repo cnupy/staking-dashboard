@@ -1,4 +1,4 @@
-import { ROLLUP_ABI, ROLLUP_FUNCTIONS } from "../abis";
+import { ROLLUP_ABI, ROLLUP_FUNCTIONS, REGISTRY_ABI } from "../abis";
 import { config } from "../config";
 import type { PublicClient, Address } from 'viem';
 
@@ -6,6 +6,35 @@ import type { PublicClient, Address } from 'viem';
 let cachedAPR: number | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 0.5 * 60 * 1000; // 30s
+
+// Canonical rollup address cache. Upgrades are rare; a short TTL means we
+// pick up a new canonical rollup on the next request after an upgrade
+// without an indexer restart.
+let cachedCanonicalRollup: Address | null = null;
+let cachedCanonicalRollupAt = 0;
+const CANONICAL_ROLLUP_TTL = 60 * 1000; // 60s
+
+/**
+ * Get the current canonical rollup address directly from the Registry via RPC.
+ * This is the fallback path. API consumers should prefer the indexed
+ * rollup_version table (see src/api/utils/canonical-rollup.ts). Used when the
+ * indexer hasn't yet processed the first CanonicalRollupUpdated event.
+ */
+export async function getCanonicalRollupFromRegistry(client: PublicClient): Promise<Address> {
+  if (cachedCanonicalRollup && Date.now() - cachedCanonicalRollupAt < CANONICAL_ROLLUP_TTL) {
+    return cachedCanonicalRollup;
+  }
+
+  const rollup = await client.readContract({
+    address: config.REGISTRY_ADDRESS as Address,
+    abi: REGISTRY_ABI,
+    functionName: 'getCanonicalRollup',
+  }) as Address;
+
+  cachedCanonicalRollup = rollup;
+  cachedCanonicalRollupAt = Date.now();
+  return rollup;
+}
 
 /**
  * Get activation threshold from Rollup contract

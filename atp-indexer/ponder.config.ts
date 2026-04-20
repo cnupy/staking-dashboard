@@ -6,11 +6,19 @@ import {
   STAKING_REGISTRY_ABI,
   ROLLUP_ABI,
   STAKER_ABI,
+  REGISTRY_ABI,
 } from "./src/abis";
 
 // ATPCreated event signature for factory pattern
 const ATPCreatedEvent = parseAbiItem(
   "event ATPCreated(address indexed beneficiary, address indexed atp, uint256 allocation)"
+);
+
+// Aztec Registry emits this on every rollup upgrade. Used as a factory source
+// so every canonical rollup, historical and future, is indexed without a
+// config change.
+const CanonicalRollupUpdatedEvent = parseAbiItem(
+  "event CanonicalRollupUpdated(address indexed instance, uint256 indexed version)"
 );
 
 // Per-factory start blocks for efficient indexing
@@ -111,14 +119,39 @@ export default createConfig({
     },
 
     /**
-     * Rollup Contract
-     * Handles validator deposits and tracks validator queue
+     * Aztec Registry
+     * Tracked as a regular contract so we can index CanonicalRollupUpdated
+     * events into a rollup_version table, served from /api/rollups so the
+     * frontend doesn't need its own Registry RPC calls. The same event is
+     * also used as a factory source for the Rollup contract below.
+     */
+    Registry: {
+      chain: config.networkName,
+      abi: REGISTRY_ABI,
+      address: config.REGISTRY_ADDRESS as `0x${string}`,
+      startBlock: config.REGISTRY_START_BLOCK,
+    },
+
+    /**
+     * Rollup Contract (dynamic, sourced from the Aztec Registry)
+     * Handles validator deposits and tracks validator queue.
+     *
+     * Uses Ponder's factory pattern on the Registry's `CanonicalRollupUpdated`
+     * event so every rollup address the Registry has ever announced (historical
+     * versions and any future upgrade) is indexed automatically. Handlers in
+     * src/events/rollup/ fire for events from any of these addresses, so
+     * rewards/withdrawals/slashing on older rollups keep being tracked even
+     * after an upgrade.
      */
     Rollup: {
       chain: config.networkName,
       abi: ROLLUP_ABI,
-      address: config.ROLLUP_ADDRESS as `0x${string}`,
-      startBlock: config.START_BLOCK,
+      address: factory({
+        address: config.REGISTRY_ADDRESS as `0x${string}`,
+        event: CanonicalRollupUpdatedEvent,
+        parameter: "instance",
+      }),
+      startBlock: config.REGISTRY_START_BLOCK,
     },
 
     /**

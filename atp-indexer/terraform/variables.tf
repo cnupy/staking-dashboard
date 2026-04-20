@@ -144,8 +144,13 @@ variable "staking_registry_address" {
   type        = string
 }
 
-variable "rollup_address" {
-  description = "Rollup contract address"
+variable "registry_address" {
+  description = "Aztec Registry contract address. The indexer uses it as a factory source to pick up all rollup upgrades automatically."
+  type        = string
+}
+
+variable "registry_start_block" {
+  description = "Block number the Registry was deployed at (factory backfill starts here)."
   type        = string
 }
 
