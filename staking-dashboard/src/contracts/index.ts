@@ -24,7 +24,6 @@ const contractEnvSchema = z.object({
   VITE_ATP_REGISTRY_ADDRESS: addressSchema,
   VITE_ATP_REGISTRY_AUCTION_ADDRESS: addressSchema,
   VITE_STAKING_REGISTRY_ADDRESS: addressSchema,
-  VITE_ROLLUP_ADDRESS: addressSchema,
   VITE_GENESIS_SEQUENCER_SALE_ADDRESS: addressSchema.optional(),
   VITE_ATP_WITHDRAWABLE_AND_CLAIMABLE_STAKER_ADDRESS: addressSchema,
   VITE_GOVERNANCE_ADDRESS: addressSchema,
@@ -33,6 +32,61 @@ const contractEnvSchema = z.object({
 
 // Validate eagerly at startup
 const env = contractEnvSchema.parse(import.meta.env);
+
+/**
+ * A rollup version record as returned by GET /api/rollups.
+ * Ordered oldest first in the API response.
+ */
+export interface RollupVersion {
+  version: string;
+  address: Address;
+  blockNumber: number;
+  timestamp: number;
+}
+
+// The canonical rollup is resolved at boot from the indexer's /api/rollups
+// endpoint (backed by the Registry:CanonicalRollupUpdated event). We also
+// cache the full version history for future cross-rollup flows (e.g.
+// claiming rewards from an old rollup). Callers still read
+// `contracts.rollup.address` synchronously; `initRollupVersions()` is
+// awaited in main.tsx before React renders so the getter always returns a
+// real address.
+let _canonicalRollupAddress: Address | null = null;
+let _rollupVersions: RollupVersion[] = [];
+
+export async function initRollupVersions(): Promise<Address> {
+  const apiHost = import.meta.env.VITE_API_HOST;
+  if (!apiHost) {
+    throw new Error("VITE_API_HOST must be set to resolve the canonical rollup");
+  }
+
+  const res = await fetch(`${apiHost}/api/rollups`);
+  if (!res.ok) {
+    throw new Error(`/api/rollups returned ${res.status}`);
+  }
+  const body = (await res.json()) as {
+    canonical: string | null;
+    versions: RollupVersion[];
+  };
+
+  if (!body.canonical || body.versions.length === 0) {
+    throw new Error(
+      "Indexer has not yet recorded a canonical rollup; the Registry:CanonicalRollupUpdated event has not been processed. Wait for the indexer to catch up past the Registry deployment block."
+    );
+  }
+
+  _rollupVersions = body.versions;
+  _canonicalRollupAddress = body.canonical as Address;
+  return _canonicalRollupAddress;
+}
+
+/**
+ * All rollup versions the Registry has ever made canonical, oldest first.
+ * Empty until `initRollupVersions()` resolves.
+ */
+export function getRollupVersions(): readonly RollupVersion[] {
+  return _rollupVersions;
+}
 
 const contracts = {
   atpFactory: {
@@ -56,7 +110,14 @@ const contracts = {
     abi: StakingRegistryAbi,
   },
   rollup: {
-    address: env.VITE_ROLLUP_ADDRESS,
+    get address(): Address {
+      if (!_canonicalRollupAddress) {
+        throw new Error(
+          "Canonical rollup address not initialized: initRollupVersions() must be awaited before app render"
+        );
+      }
+      return _canonicalRollupAddress;
+    },
     abi: RollupAbi,
   },
   genesisSequencerSale: {

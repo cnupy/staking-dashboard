@@ -94,7 +94,8 @@ Example `contract_addresses.json`:
   "atpRegistry": "0x...",
   "atpRegistryAuction": "0x...",
   "stakingRegistry": "0x...",
-  "rollupAddress": "0x...",
+  "registryAddress": "0x...",
+  "registryDeploymentBlock": "12345678",
   "atpWithdrawableAndClaimableStaker": "0x...",
   "genesisSequencerSale": "0x...",
   "governanceAddress": "0x...",
@@ -102,6 +103,8 @@ Example `contract_addresses.json`:
   "atpFactoryDeploymentBlock": "12345678"
 }
 ```
+
+The canonical rollup is no longer a separate configuration value, the indexer and frontend both resolve it dynamically from `Registry.getCanonicalRollup()`. Rollup upgrades (new `addRollup()` calls on the Registry) are picked up automatically: the indexer continues indexing every historical rollup via Ponder's factory pattern on the `CanonicalRollupUpdated` event, and the frontend re-resolves on every page load.
 
 For production contract addresses, see the [Aztec documentation](https://docs.aztec.network/) or contact the Aztec team.
 

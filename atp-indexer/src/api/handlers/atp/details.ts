@@ -3,7 +3,7 @@ import { db } from 'ponder:api';
 import { eq, desc, sql, or } from 'drizzle-orm';
 import { normalizeAddress, checksumAddress } from '../../../utils/address';
 import { getActivationThreshold } from '../../../utils/rollup';
-import { config } from '../../../config';
+import { getCanonicalRollupAddress } from '../../utils/canonical-rollup';
 import { getPublicClient } from '../../../utils/viem-client';
 import type { ATPDetailsResponse } from '../../types/atp.types';
 import { fetchFailedDeposits, markStakesWithFailedDeposits } from '../../../utils/failed-deposits';
@@ -148,7 +148,8 @@ export async function handleATPDetails(c: Context): Promise<Response> {
     const validStakingOpsCount = markedDelegations.filter(isActiveStake).length;
 
     // Calculate total staked
-    const activationThreshold = await getActivationThreshold(config.ROLLUP_ADDRESS, client);
+    const rollupAddress = await getCanonicalRollupAddress(client);
+    const activationThreshold = await getActivationThreshold(rollupAddress, client);
     const totalStaked = BigInt(activationThreshold) * (BigInt(validDirectStakesCount) + BigInt(validStakingOpsCount));
 
     // Query slashed table to get total slashed per attester address

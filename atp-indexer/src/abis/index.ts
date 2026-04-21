@@ -40,3 +40,10 @@ export {
   TokensWithdrawnToBeneficiaryEventAbi,
   STAKER_ABI,
 } from './staker.abi';
+
+// Registry ABIs (Aztec governance Registry: source of canonical rollup upgrades)
+export {
+  CanonicalRollupUpdatedEventAbi,
+  REGISTRY_FUNCTIONS,
+  REGISTRY_ABI,
+} from './registry.abi';

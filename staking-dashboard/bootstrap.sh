@@ -56,7 +56,6 @@ load_contract_addresses() {
     VITE_ATP_REGISTRY_ADDRESS=$(cat $contract_addresses_file | jq -r '.atpRegistry')
     VITE_ATP_REGISTRY_AUCTION_ADDRESS=$(cat $contract_addresses_file | jq -r '.atpRegistryAuction')
     VITE_STAKING_REGISTRY_ADDRESS=$(cat $contract_addresses_file | jq -r '.stakingRegistry')
-    VITE_ROLLUP_ADDRESS=$(cat $contract_addresses_file | jq -r '.rollupAddress')
     VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS=$(cat $contract_addresses_file | jq -r '.atpWithdrawableAndClaimableStaker')
     VITE_ATP_WITHDRAWABLE_STAKER_ADDRESS=$(cat $contract_addresses_file | jq -r '.atpWithdrawableAndClaimableStaker')
     VITE_ATP_WITHDRAWABLE_AND_CLAIMABLE_STAKER_ADDRESS=$(cat $contract_addresses_file | jq -r '.atpWithdrawableAndClaimableStaker')
@@ -153,9 +152,6 @@ function update_env_file() {
   
   log_step "Updating VITE_STAKING_REGISTRY_ADDRESS: $VITE_STAKING_REGISTRY_ADDRESS"
   update_env_var $env_file "VITE_STAKING_REGISTRY_ADDRESS" "$VITE_STAKING_REGISTRY_ADDRESS"
-  
-  log_step "Updating VITE_ROLLUP_ADDRESS: $VITE_ROLLUP_ADDRESS"
-  update_env_var $env_file "VITE_ROLLUP_ADDRESS" "$VITE_ROLLUP_ADDRESS"
   
   log_step "Updating VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS: $VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS"
   update_env_var $env_file "VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS" "$VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS"
@@ -261,7 +257,6 @@ VITE_ATP_FACTORY_AUCTION_ADDRESS=$VITE_ATP_FACTORY_AUCTION_ADDRESS
 VITE_ATP_REGISTRY_ADDRESS=$VITE_ATP_REGISTRY_ADDRESS
 VITE_ATP_REGISTRY_AUCTION_ADDRESS=$VITE_ATP_REGISTRY_AUCTION_ADDRESS
 VITE_STAKING_REGISTRY_ADDRESS=$VITE_STAKING_REGISTRY_ADDRESS
-VITE_ROLLUP_ADDRESS=$VITE_ROLLUP_ADDRESS
 VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS=$VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS
 VITE_ATP_WITHDRAWABLE_STAKER_ADDRESS=$VITE_ATP_WITHDRAWABLE_STAKER_ADDRESS
 VITE_GENESIS_SEQUENCER_SALE_ADDRESS=$VITE_GENESIS_SEQUENCER_SALE_ADDRESS
@@ -316,8 +311,6 @@ function update_env_file_deploy() {
   update_env_var "$WEBSITE_ROOT/.env.$environment" "VITE_ATP_REGISTRY_AUCTION_ADDRESS" $VITE_ATP_REGISTRY_AUCTION_ADDRESS
   log_step "Updating VITE_STAKING_REGISTRY_ADDRESS"
   update_env_var "$WEBSITE_ROOT/.env.$environment" "VITE_STAKING_REGISTRY_ADDRESS" $VITE_STAKING_REGISTRY_ADDRESS
-  log_step "Updating VITE_ROLLUP_ADDRESS"
-  update_env_var "$WEBSITE_ROOT/.env.$environment" "VITE_ROLLUP_ADDRESS" $VITE_ROLLUP_ADDRESS
   log_step "Updating VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS"
   update_env_var "$WEBSITE_ROOT/.env.$environment" "VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS" $VITE_ATP_NON_WITHDRAWABLE_STAKER_ADDRESS
   log_step "Updating VITE_ATP_WITHDRAWABLE_STAKER_ADDRESS"
@@ -544,7 +537,8 @@ case $ACTION in
       echo "      \"atpRegistry\": \"0x...\","
       echo "      \"atpRegistryAuction\": \"0x...\","
       echo "      \"stakingRegistry\": \"0x...\","
-      echo "      \"rollupAddress\": \"0x...\","
+      echo "      \"registryAddress\": \"0x...\","
+      echo "      \"registryDeploymentBlock\": \"12345678\","
       echo "      \"atpWithdrawableAndClaimableStaker\": \"0x...\","
       echo "      \"genesisSequencerSale\": \"0x...\","
       echo "      \"governanceAddress\": \"0x...\","

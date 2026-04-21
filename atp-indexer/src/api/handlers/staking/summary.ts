@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { db } from 'ponder:api';
 import { count } from 'drizzle-orm';
 import { getActivationThreshold, calculateAPR } from '../../../utils/rollup';
-import { config } from '../../../config';
+import { getCanonicalRollupAddress } from '../../utils/canonical-rollup';
 import { getPublicClient } from '../../../utils/viem-client';
 import type { StakingSummaryResponse } from '../../types/staking.types';
 import {
@@ -23,7 +23,7 @@ import {
 export async function handleStakingSummary(c: Context): Promise<Response> {
   try {
     const client = getPublicClient();
-    const rollupAddress = config.ROLLUP_ADDRESS;
+    const rollupAddress = await getCanonicalRollupAddress(client);
 
     // Data model explanation:
     // - `deposit` table: ALL Rollup:Deposit events (validator registrations on-chain)
