@@ -43,7 +43,8 @@ export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion,
   const { date, time } = formatBlockTimestamp(stake.timestamp)
   const { isRewardsClaimable } = useIsRewardsClaimable()
 
-  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(stake.attesterAddress as Address)
+  const stakeRollupAddress = stake.rollupAddress as Address
+  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(stake.attesterAddress as Address, stakeRollupAddress)
   const { withdrawalDelayDays } = useGovernanceConfig()
 
   const {
@@ -55,7 +56,7 @@ export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion,
     isAtRisk,
     isCritical,
     isLoading: isLoadingHealth
-  } = useStakeHealth(stake.attesterAddress as Address)
+  } = useStakeHealth(stake.attesterAddress as Address, stakeRollupAddress)
 
   const isUnstaked = stake.status === 'UNSTAKED'
   const isInQueue = status === SequencerStatus.NONE && !stake.hasFailedDeposit && !isUnstaked
@@ -389,6 +390,7 @@ export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion,
                     stakerAddress={stakerAddress}
                     attesterAddress={stake.attesterAddress as Address}
                     rollupVersion={rollupVersion}
+                    rollupAddress={stakeRollupAddress}
                     status={status}
                     canFinalize={canFinalize}
                     actualUnlockTime={actualUnlockTime}

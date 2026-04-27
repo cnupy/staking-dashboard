@@ -6,6 +6,7 @@ import { stringToBigInt } from '@/utils/atpFormatters'
 export interface DirectStake {
   attesterAddress: string
   operatorAddress: string
+  rollupAddress: string
   stakedAmount: bigint
   txHash: string
   timestamp: string
@@ -21,6 +22,7 @@ export interface Delegation {
   providerName?: string
   providerLogo?: string
   operatorAddress: string
+  rollupAddress: string
   splitContract: string
   providerTakeRate: number
   providerRewardsRecipient: string

@@ -29,6 +29,7 @@ function formatDirectStakes(
     return {
       attesterAddress: checksumAddress(stake.attesterAddress),
       operatorAddress: checksumAddress(stake.operatorAddress),
+      rollupAddress: checksumAddress(stake.rollupAddress),
       stakedAmount: activationThreshold,
       totalSlashed: totalSlashed.toString(),
       txHash: stake.txHash,
@@ -63,6 +64,7 @@ function formatDelegations(
         providerName: metadata?.providerName || `Provider ${providerId}`,
         providerLogo: metadata?.providerLogoUrl || '',
         operatorAddress: checksumAddress(op.attesterAddress),
+        rollupAddress: checksumAddress(op.rollupAddress),
         stakedAmount: activationThreshold,
         totalSlashed: totalSlashed.toString(),
         splitContract: checksumAddress(op.splitContractAddress),

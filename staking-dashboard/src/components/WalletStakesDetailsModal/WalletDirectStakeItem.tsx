@@ -34,7 +34,8 @@ export const WalletDirectStakeItem = ({
   const { symbol, decimals } = useStakingAssetTokenDetails()
   const { date, time } = formatBlockTimestamp(stake.timestamp)
 
-  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(stake.attesterAddress as Address)
+  const stakeRollupAddress = stake.rollupAddress as Address
+  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(stake.attesterAddress as Address, stakeRollupAddress)
   const { withdrawalDelayDays } = useGovernanceConfig()
 
   const {
@@ -46,7 +47,7 @@ export const WalletDirectStakeItem = ({
     isAtRisk,
     isCritical,
     isLoading: isLoadingHealth
-  } = useStakeHealth(stake.attesterAddress as Address)
+  } = useStakeHealth(stake.attesterAddress as Address, stakeRollupAddress)
 
   const isUnstaked = stake.status === 'UNSTAKED'
   const isInQueue = status === SequencerStatus.NONE && !stake.hasFailedDeposit && !isUnstaked
@@ -248,6 +249,7 @@ export const WalletDirectStakeItem = ({
                   <WalletWithdrawalActions
                     attesterAddress={stake.attesterAddress as Address}
                     recipientAddress={address}
+                    rollupAddress={stakeRollupAddress}
                     status={status}
                     canFinalize={canFinalize}
                     actualUnlockTime={actualUnlockTime}
