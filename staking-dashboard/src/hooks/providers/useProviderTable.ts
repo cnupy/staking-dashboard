@@ -36,6 +36,13 @@ export type SortField = 'name' | 'totalStaked' | 'commission'
 export type SortDirection = 'asc' | 'desc'
 
 /**
+ * Number of top providers that get collapsed into a single "group" row on
+ * page 1 (default sort, no search). Shared with `useProviderTableDisplayData`
+ * so pagination math and the display flag agree.
+ */
+export const TOP_GROUP_SIZE = 5
+
+/**
  * Fetch providers from API
  */
 async function fetchProviders(): Promise<ProvidersResponse> {
@@ -203,14 +210,42 @@ export const useProviderTable = () => {
       })
   }, [allProviders, searchQuery, sortField, sortDirection])
 
+  // Page 1 absorbs the grouped providers so the visible row count matches
+  // every other page. Collapsed view = 1 group row + (itemsPerPage - 1)
+  // individual rows = `itemsPerPage` slots, the same as page 2+. The first
+  // `TOP_GROUP_SIZE` providers collapse into the group row; the remaining
+  // `itemsPerPage - 1` render below. The gating below mirrors
+  // `useProviderTableDisplayData`'s `topGroupSize` derivation so the two stay
+  // in sync.
+  const showsTopGroupOnPage1 =
+    sortField === 'totalStaked' &&
+    sortDirection === 'desc' &&
+    !searchQuery &&
+    !hasUserSorted &&
+    filteredAndSortedProviders.length > TOP_GROUP_SIZE
+
+  const page1Size = showsTopGroupOnPage1
+    ? TOP_GROUP_SIZE + (itemsPerPage - 1)
+    : itemsPerPage
+
   const paginationData = useMemo(() => {
-    const totalPages = Math.ceil(filteredAndSortedProviders.length / itemsPerPage)
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
+    const total = filteredAndSortedProviders.length
+    let startIndex: number
+    let endIndex: number
+    if (currentPage === 1) {
+      startIndex = 0
+      endIndex = Math.min(total, page1Size)
+    } else {
+      startIndex = page1Size + (currentPage - 2) * itemsPerPage
+      endIndex = Math.min(total, startIndex + itemsPerPage)
+    }
     const providers = filteredAndSortedProviders.slice(startIndex, endIndex)
+    const totalPages = total <= page1Size
+      ? Math.max(1, Math.ceil(total / itemsPerPage))
+      : 1 + Math.ceil((total - page1Size) / itemsPerPage)
 
     return { totalPages, startIndex, endIndex, providers }
-  }, [filteredAndSortedProviders, currentPage])
+  }, [filteredAndSortedProviders, currentPage, page1Size])
 
   const handleSearchChange = (query: string) => {
     setSearchQuery(query)

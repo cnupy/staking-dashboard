@@ -208,11 +208,16 @@ export const ProviderTable = ({
     setIsGroupExpanded(false)
   }, [topGroupSize])
 
-  const shouldShowGroup = topGroupSize > 0 && providers.length > topGroupSize && !isGroupExpanded
-  const groupProviders = shouldShowGroup ? providers.slice(0, topGroupSize) : []
-  const restProviders = shouldShowGroup ? providers.slice(topGroupSize) : providers
+  // The collapsed-group row is rendered whenever a group exists, regardless of
+  // expansion state — clicking it toggles between showing the top-N as a
+  // single summary (collapsed) and listing them as individual rows below it
+  // with a decentralization bar between top-N and rest (expanded). Without
+  // this, the row vanishes on expand and the user has no way to fold it back.
+  const hasGroup = topGroupSize > 0 && providers.length > topGroupSize
+  const groupProviders = hasGroup ? providers.slice(0, topGroupSize) : []
+  const restProviders = hasGroup ? providers.slice(topGroupSize) : providers
   const shouldShowInlineBar =
-    !shouldShowGroup &&
+    !hasGroup &&
     showDecentralizationBar &&
     decentralizationBarAfterCount > 0 &&
     providers.length > decentralizationBarAfterCount
@@ -383,12 +388,12 @@ export const ProviderTable = ({
         ) : providers.length > 0 ? (
           <>
             {/* ── Top-group row ── */}
-            {shouldShowGroup && (
+            {hasGroup && (
               <>
                 {/* Collapsed / expanded toggle row */}
                 <TableRow
                   className="cursor-pointer select-none"
-                  onClick={() => setIsGroupExpanded(true)}
+                  onClick={() => setIsGroupExpanded((prev) => !prev)}
                 >
                   <TableCell>
                     <div className="flex items-center gap-3">
@@ -425,7 +430,7 @@ export const ProviderTable = ({
                       <Icon
                         name="chevronDown"
                         size="md"
-                        className="text-parchment/50"
+                        className={`text-parchment/50 transition-transform ${isGroupExpanded ? 'rotate-180' : ''}`}
                       />
                     </div>
                   </TableCell>
@@ -488,13 +493,35 @@ export const ProviderTable = ({
               </>
             )}
 
-            {/* Decentralization separator */}
-            {showDecentralizationBar && !shouldShowInlineBar && (
-              <DecentralizationBarRow />
-            )}
+            {/* Rendering matrix:
+                  - Group + collapsed: group row, decentralization bar, rest
+                  - Group + expanded:  group row, top-N individuals, decentralization bar, rest
+                  - No group, inline bar enabled: top-N individuals, bar, rest
+                  - No group, no bar: all individuals
+                The group row itself is rendered above this block. */}
+            {hasGroup ? (
+              <>
+                {isGroupExpanded && groupProviders.map((provider) => (
+                  <ProviderRow
+                    key={provider.id}
+                    provider={provider}
+                    config={providerConfigurations?.get(Number(provider.id))}
+                    {...sharedRowProps}
+                  />
+                ))}
 
-            {/* Individual provider rows (providers after the group, or all if no group) */}
-            {shouldShowInlineBar ? (
+                {showDecentralizationBar && <DecentralizationBarRow />}
+
+                {restProviders.map((provider) => (
+                  <ProviderRow
+                    key={provider.id}
+                    provider={provider}
+                    config={providerConfigurations?.get(Number(provider.id))}
+                    {...sharedRowProps}
+                  />
+                ))}
+              </>
+            ) : shouldShowInlineBar ? (
               <>
                 {inlineTopProviders.map((provider) => (
                   <ProviderRow

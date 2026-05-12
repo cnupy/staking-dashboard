@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { useAggregatedStakingData } from "@/hooks/atp/useAggregatedStakingData"
 import { useMultipleProviderQueueLengths, useMultipleProviderConfigurations } from "@/hooks/stakingRegistry"
-import { type ProviderListItem, type SortDirection, type SortField } from "@/hooks/providers/useProviderTable"
+import { TOP_GROUP_SIZE, type ProviderListItem, type SortDirection, type SortField } from "@/hooks/providers/useProviderTable"
 
 interface UseProviderTableDisplayDataParams {
   providers: ProviderListItem[]
@@ -11,8 +11,6 @@ interface UseProviderTableDisplayDataParams {
   searchQuery: string
   hasUserSorted: boolean
 }
-
-const TOP_GROUP_SIZE = 5
 
 /**
  * Shared display data for provider table entry points.
