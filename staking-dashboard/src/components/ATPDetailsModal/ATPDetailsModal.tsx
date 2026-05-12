@@ -468,6 +468,7 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                           userRewards: 0n,
                           takeRate: delegation.providerTakeRate,
                           rollupRewardsByRollup: [],
+                          splitContractBalance: 0n,
                         }}
                         isLoadingDelegationRewards={isLoadingDelegationRewards && !delegation.hasFailedDeposit}
                         stakerAddress={stakerAddress}
