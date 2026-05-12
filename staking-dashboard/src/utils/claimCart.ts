@@ -53,12 +53,21 @@ export interface DelegationClaimInputs {
   tokenAddress: Address
   decimals: number
   symbol: string
-  /** Current ERC20 balance sitting on the split contract — i.e. tokens already
-   *  claimed from a rollup but not yet distributed. When this is non-zero and
-   *  no per-rollup balances need claiming, the helper emits a distribute-only
-   *  plan so a previously stranded balance can still be swept to the user. */
+  /** Current ERC20 balance sitting on the split contract. When non-zero with
+   *  no per-rollup balance to claim, the helper emits a distribute-only entry
+   *  to sweep stranded tokens — but only if the balance is above
+   *  `RECOVERY_DUST_THRESHOLD_NUMERATOR / 10` of one whole token, to avoid
+   *  queuing a useless distribute for the rounding-dust most splits carry
+   *  after any partial distribute. */
   splitContractBalance?: bigint
 }
+
+/**
+ * Dust threshold (numerator / 10) used to gate the distribute-only recovery
+ * flow. `5` here means "0.5 of a whole token". Below this we assume the
+ * leftover is rounding-dust and not worth queuing a transaction for.
+ */
+const RECOVERY_DUST_THRESHOLD_NUMERATOR = 5n
 
 export interface DelegationClaimResult {
   entries: ClaimCartEntry[]
@@ -90,11 +99,15 @@ export function buildDelegationClaimEntries(inputs: DelegationClaimInputs): Dele
   } = inputs
 
   const claimables = rollupRewardsByRollup.filter((r) => r.rewards > 0n)
-  // Distribute-only recovery: no rollup balance to claim, but the split
-  // contract still holds tokens from a prior partially-executed claim. Emit
-  // just the distribute (no claim deps) so the user can sweep the stranded
-  // balance. Without this branch the button/modal becomes a silent no-op.
-  if (claimables.length === 0 && splitContractBalance === 0n) {
+  // Dust threshold scaled by the asset's decimals (0.5 of one whole token).
+  // Splits almost always carry a tiny non-zero balance after a partial
+  // distribute, so a bare `splitContractBalance > 0n` check made the bulk
+  // path queue a useless distribute every click. Only treat balances above
+  // the threshold as a real stranded amount worth a distribute-only recovery.
+  const dustThreshold = decimals >= 1
+    ? RECOVERY_DUST_THRESHOLD_NUMERATOR * 10n ** BigInt(decimals - 1)
+    : 0n
+  if (claimables.length === 0 && splitContractBalance < dustThreshold) {
     return { entries: [], distributeGroup: null }
   }
 
