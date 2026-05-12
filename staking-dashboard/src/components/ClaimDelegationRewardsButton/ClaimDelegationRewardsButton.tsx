@@ -89,6 +89,7 @@ export const ClaimDelegationRewardsButton = ({
       tokenAddress,
       decimals: decimals ?? 18,
       symbol: symbol ?? "",
+      splitContractBalance: currentSplitBalance,
     })
     const withdraw = entries.length > 0 || currentWarehouseBalance > 0n
       ? buildWarehouseWithdrawEntry({

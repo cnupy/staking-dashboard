@@ -230,6 +230,7 @@ export const ATPStakingOverviewBreakdownSection = ({
                       providerRewardsRecipient: d.providerRewardsRecipient as `0x${string}`,
                       rewards: d.rewards,
                       rollupRewardsByRollup: d.rollupRewardsByRollup,
+                      splitContractBalance: d.splitContractBalance,
                       providerName: d.providerName,
                       providerId: d.providerId,
                     })),
@@ -239,6 +240,7 @@ export const ATPStakingOverviewBreakdownSection = ({
                       providerRewardsRecipient: d.providerRewardsRecipient as `0x${string}`,
                       rewards: d.rewards,
                       rollupRewardsByRollup: d.rollupRewardsByRollup,
+                      splitContractBalance: d.splitContractBalance,
                       providerName: d.providerName,
                       providerId: d.providerId,
                     }))

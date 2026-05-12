@@ -170,6 +170,7 @@ export const WalletStakesDetailsModal = ({
                         providerRewardsRecipient: d.providerRewardsRecipient,
                         rewards: d.rewards,
                         rollupRewardsByRollup: d.rollupRewardsByRollup,
+                        splitContractBalance: d.splitContractBalance,
                         providerName: d.providerName,
                         providerId: d.providerId,
                       }))}

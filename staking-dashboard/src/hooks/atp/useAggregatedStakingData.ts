@@ -58,6 +58,10 @@ export interface DelegationBreakdown {
   /** Per-rollup unclaimed `getSequencerRewards(splitContract)` balances. Used by the
    *  claim engine to pre-sweep stranded balances from non-canonical rollups. */
   rollupRewardsByRollup: Array<{ rollupAddress: Address; rollupVersion: string; rewards: bigint }>
+  /** ERC20 balance currently sitting on the split contract. Non-zero means a
+   *  previous claim landed tokens here but distribute hasn't run yet — the
+   *  claim engine needs this to surface a distribute-only recovery flow. */
+  splitContractBalance: bigint
 }
 
 export interface Erc20DelegationBreakdown {
@@ -81,6 +85,8 @@ export interface Erc20DelegationBreakdown {
   /** Per-rollup unclaimed `getSequencerRewards(splitContract)` balances. Used by the
    *  claim engine to pre-sweep stranded balances from non-canonical rollups. */
   rollupRewardsByRollup: Array<{ rollupAddress: Address; rollupVersion: string; rewards: bigint }>
+  /** See {@link DelegationBreakdown.splitContractBalance}. */
+  splitContractBalance: bigint
 }
 
 export interface Erc20DirectStakeBreakdown {
@@ -321,6 +327,7 @@ function parseDelegation(
     timestamp: delegation.timestamp,
     blockNumber: delegation.blockNumber,
     rollupRewardsByRollup: rollupBalancesByRollup,
+    splitContractBalance,
   }
 }
 
@@ -390,6 +397,7 @@ function parseErc20Delegation(
     timestamp: delegation.timestamp,
     blockNumber: delegation.blockNumber,
     rollupRewardsByRollup: rollupBalancesByRollup,
+    splitContractBalance,
   }
 }
 

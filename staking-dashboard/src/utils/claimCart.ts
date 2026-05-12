@@ -53,6 +53,11 @@ export interface DelegationClaimInputs {
   tokenAddress: Address
   decimals: number
   symbol: string
+  /** Current ERC20 balance sitting on the split contract — i.e. tokens already
+   *  claimed from a rollup but not yet distributed. When this is non-zero and
+   *  no per-rollup balances need claiming, the helper emits a distribute-only
+   *  plan so a previously stranded balance can still be swept to the user. */
+  splitContractBalance?: bigint
 }
 
 export interface DelegationClaimResult {
@@ -81,10 +86,15 @@ export function buildDelegationClaimEntries(inputs: DelegationClaimInputs): Dele
     tokenAddress,
     decimals,
     symbol,
+    splitContractBalance = 0n,
   } = inputs
 
   const claimables = rollupRewardsByRollup.filter((r) => r.rewards > 0n)
-  if (claimables.length === 0) {
+  // Distribute-only recovery: no rollup balance to claim, but the split
+  // contract still holds tokens from a prior partially-executed claim. Emit
+  // just the distribute (no claim deps) so the user can sweep the stranded
+  // balance. Without this branch the button/modal becomes a silent no-op.
+  if (claimables.length === 0 && splitContractBalance === 0n) {
     return { entries: [], distributeGroup: null }
   }
 

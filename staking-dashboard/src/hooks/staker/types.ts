@@ -12,6 +12,11 @@ export interface StakeWithProviderReward {
     rollupVersion: string
     rewards: bigint
   }>
+  /** ERC20 balance currently sitting on the split contract. Non-zero with no
+   *  per-rollup balance means a prior claim landed tokens here but distribute
+   *  hasn't run yet — the claim engine needs this to surface a distribute-only
+   *  recovery flow. */
+  splitContractBalance: bigint
 }
 
 export interface G1Point {

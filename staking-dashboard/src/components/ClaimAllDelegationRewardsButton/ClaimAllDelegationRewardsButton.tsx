@@ -23,6 +23,10 @@ interface DelegationClaim {
   rewards: bigint
   /** Required for the helper to fan out per-rollup claims. */
   rollupRewardsByRollup?: Array<{ rollupAddress: Address; rollupVersion: string; rewards: bigint }>
+  /** Tokens already on the split contract awaiting distribute. Needed so a
+   *  partially-executed claim (claim ran, distribute didn't) can still be
+   *  recovered as a distribute-only entry. */
+  splitContractBalance?: bigint
   providerName?: string | null
   providerId?: number
 }
@@ -52,12 +56,15 @@ export const ClaimAllDelegationRewardsButton = ({
   const firstSplit = delegations[0]?.splitContract
   const { warehouseAddress } = useSplitsWarehouse(firstSplit)
 
-  // Filter to delegations that have *anything* claimable — canonical or stranded.
+  // Filter to delegations that have *anything* claimable — canonical, stranded
+  // on a non-canonical rollup, or already swept into the split contract but
+  // awaiting distribute.
   const claimableDelegations = useMemo(() => {
     const canonicalRollup = contracts.rollup.address.toLowerCase()
     return delegations.filter((d) => {
       const perRollup = d.rollupRewardsByRollup ?? []
       return perRollup.some((r) => r.rewards > 0n)
+        || (d.splitContractBalance ?? 0n) > 0n
         || (d.rewards > 0n && !perRollup.some((r) => r.rollupAddress.toLowerCase() === canonicalRollup))
     })
   }, [delegations])
@@ -93,6 +100,7 @@ export const ClaimAllDelegationRewardsButton = ({
         tokenAddress,
         decimals: decimals ?? 18,
         symbol: symbol ?? "",
+        splitContractBalance: d.splitContractBalance,
       })
       entries.push(...delegationEntries)
       if (distributeGroup) lastDistributeGroup = distributeGroup
