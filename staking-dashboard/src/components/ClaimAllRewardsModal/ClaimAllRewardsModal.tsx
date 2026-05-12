@@ -73,6 +73,7 @@ export const ClaimAllRewardsModal = ({
         tokenAddress,
         decimals: decimals ?? 18,
         symbol: symbol ?? "",
+        splitContractBalance: d.splitContractBalance,
       })
       entriesToAdd.push(...entries)
       if (distributeGroup) lastDistributeGroup = distributeGroup

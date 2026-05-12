@@ -435,6 +435,7 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                         providerRewardsRecipient: d.providerRewardsRecipient as Address,
                         rewards: rewards?.userRewards ?? 0n,
                         rollupRewardsByRollup: rewards?.rollupRewardsByRollup,
+                        splitContractBalance: rewards?.splitContractBalance,
                         providerName: d.providerName,
                         providerId: d.providerId,
                       }

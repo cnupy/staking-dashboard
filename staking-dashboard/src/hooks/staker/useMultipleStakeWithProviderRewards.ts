@@ -102,6 +102,7 @@ export const useMultipleStakeWithProviderRewards = ({
       userRewards,
       takeRate: delegation.providerTakeRate,
       rollupRewardsByRollup,
+      splitContractBalance: splitBalance,
     }
   })
 
