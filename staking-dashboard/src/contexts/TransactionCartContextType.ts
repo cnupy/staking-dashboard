@@ -1,7 +1,7 @@
 import type { Address } from "viem"
 import { ATPStakingStepsWithTransaction } from "./ATPStakingStepsContext"
 
-export type TransactionType = "delegation" | "self-stake" | "setup" | "wallet-delegation" | "wallet-direct-stake" | "claim"
+export type TransactionType = "delegation" | "self-stake" | "setup" | "wallet-delegation" | "wallet-direct-stake" | "claim" | "unstake"
 
 /**
  * Step type for claim flows. String values so they can't collide with
@@ -26,6 +26,43 @@ export const ClaimStepTypeName: Record<ClaimStepType, string> = {
   [ClaimStepType.SplitClaim]: "Claim to Split Contract",
   [ClaimStepType.SplitDistribute]: "Distribute Rewards",
   [ClaimStepType.SplitWithdraw]: "Withdraw Rewards",
+}
+
+/**
+ * Step type for unstake/withdraw flows. Three paths (wallet ERC20, ATP staker,
+ * governance) × two phases (initiate, finalize) = six leaves. String values
+ * keep them from colliding with other step-type enums.
+ *
+ * Unstake operations are `msg.sender`-bound (the contract checks the caller
+ * matches the stored withdrawer), so they cannot be batched via Multicall3.
+ * For Safe wallets the Safe contract IS the stored withdrawer so a Safe
+ * proposal containing many initiate/finalize calls executes natively.
+ */
+export enum UnstakeStepType {
+  /** Rollup.initiateWithdraw(attester, recipient) — wallet ERC20 direct-staker path. */
+  InitiateWithdrawRollup = "unstake:initiate-rollup",
+  /** Staker.initiateWithdraw(version, attester) — ATP staker path. */
+  InitiateWithdrawStaker = "unstake:initiate-staker",
+  /** Staker.initiateWithdrawFromGovernance(amount) — governance ATP path. */
+  InitiateWithdrawGovernance = "unstake:initiate-governance",
+  /** Governance.initiateWithdraw(to, amount) — direct-deposit ERC20 holders. */
+  InitiateWithdrawGovernanceWallet = "unstake:initiate-governance-wallet",
+  /** Rollup.finalizeWithdraw(attester) — wallet ERC20 direct-staker path. */
+  FinalizeWithdrawRollup = "unstake:finalize-rollup",
+  /** Staker.finalizeWithdraw(version, attester) — ATP staker path. */
+  FinalizeWithdrawStaker = "unstake:finalize-staker",
+  /** Governance.finalizeWithdraw(withdrawalId) — governance path (different contract). */
+  FinalizeWithdrawGovernance = "unstake:finalize-governance",
+}
+
+export const UnstakeStepTypeName: Record<UnstakeStepType, string> = {
+  [UnstakeStepType.InitiateWithdrawRollup]: "Initiate Unstake",
+  [UnstakeStepType.InitiateWithdrawStaker]: "Initiate Unstake",
+  [UnstakeStepType.InitiateWithdrawGovernance]: "Initiate Governance Withdraw",
+  [UnstakeStepType.InitiateWithdrawGovernanceWallet]: "Initiate Governance Withdraw",
+  [UnstakeStepType.FinalizeWithdrawRollup]: "Finalize Unstake",
+  [UnstakeStepType.FinalizeWithdrawStaker]: "Finalize Unstake",
+  [UnstakeStepType.FinalizeWithdrawGovernance]: "Finalize Governance Withdraw",
 }
 
 export interface TransactionDependency<T> {
@@ -95,6 +132,30 @@ export interface ClaimMetadata extends BaseMetadata<ClaimStepType> {
   amount?: bigint
 }
 
+export interface UnstakeMetadata extends BaseMetadata<UnstakeStepType> {
+  /** Which validator / attester the unstake targets. Always captured at
+   *  add-time so the cart entry's calldata is deterministic and doesn't
+   *  depend on chain state changing between add and execute. */
+  attesterAddress?: Address
+  /** Recipient address (rollup path); captured at add-time, NOT
+   *  `msg.sender` — passes explicitly through calldata. */
+  recipient?: Address
+  /** Rollup contract for rollup-path entries. */
+  rollupAddress?: Address
+  /** Staker contract for ATP-staker / governance-path entries. */
+  stakerAddress?: Address
+  /** Governance contract (used by FinalizeWithdrawGovernance). */
+  governanceAddress?: Address
+  /** Rollup version for the ATP staker path (the position's stored version). */
+  version?: bigint
+  /** Amount to unstake (governance path) or display-only stake amount (rollup/staker). */
+  amount?: bigint
+  /** Withdrawal id used by the governance finalize call. */
+  withdrawalId?: bigint
+  /** Provider name for cart-row display. */
+  providerName?: string | null
+}
+
 export interface RawTransaction {
   to: Address
   data: `0x${string}`
@@ -123,6 +184,7 @@ export type CartTransaction =
   | BaseCartItem<"wallet-delegation", WalletDelegationMetadata>
   | BaseCartItem<"wallet-direct-stake", WalletDirectStakeMetadata>
   | BaseCartItem<"claim", ClaimMetadata>
+  | BaseCartItem<"unstake", UnstakeMetadata>
 
 export interface AddTransactionOptions {
   preventDuplicate?: boolean
@@ -149,6 +211,11 @@ export interface TransactionCartContextType {
   moveUp: (id: string) => void
   moveDown: (id: string) => void
   checkTransactionInQueue: (transaction: RawTransaction) => boolean
+  /** Identity-based queue check by `metadata.stepType` + `stepGroupIdentifier`.
+   *  Use this when the underlying calldata could change between renders (e.g.
+   *  a refetched rollup version) and you'd otherwise see the queued-state
+   *  flicker. Returns true when any cart entry shares that identity. */
+  checkStepGroupInQueue: (stepType: string | number, stepGroupIdentifier: string) => boolean
   getTransaction: (id: string) => CartTransaction | undefined
   getTransactionByTx: (transaction: RawTransaction) => CartTransaction | undefined
   isSafe: boolean

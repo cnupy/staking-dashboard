@@ -1,8 +1,11 @@
-import { useState } from "react"
+import { useState, useMemo, Fragment } from "react"
 import { Icon } from "@/components/Icon"
 import { useTransactionCart } from "@/contexts/TransactionCartContext"
 import { useTermsModal } from "@/contexts/TermsModalContext"
 import { TransactionCartDetailsExpanded } from "./TransactionCartDetailsExpanded"
+import { MulticallBatchHeader } from "./MulticallBatchHeader"
+import { planExecution } from "@/hooks/transactionCart/useMulticall3Execution"
+import type { CartTransaction } from "@/contexts/TransactionCartContext"
 
 interface TransactionCartExpandedProps {
   onMinimize: () => void
@@ -21,15 +24,31 @@ export const TransactionCartExpanded = ({ onMinimize }: TransactionCartExpandedP
     isExecuting,
     currentExecutingId,
     moveUp,
-    moveDown
+    moveDown,
+    isSafe,
   } = useTransactionCart()
 
   const { requireTermsAcceptance } = useTermsModal()
 
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null)
+  /**
+   * Tracks which multicall segments the user has collapsed. We key by the
+   * first entry's id (stable across re-renders of the same segment), and
+   * default to "all expanded" — adding to the set means collapsed.
+   */
+  const [collapsedSegmentIds, setCollapsedSegmentIds] = useState<Set<string>>(new Set())
 
   const toggleExpand = (txId: string) => {
     setExpandedTxId(expandedTxId === txId ? null : txId)
+  }
+
+  const toggleSegment = (segmentId: string) => {
+    setCollapsedSegmentIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(segmentId)) next.delete(segmentId)
+      else next.add(segmentId)
+      return next
+    })
   }
 
   const handleExecuteClick = () => {
@@ -37,6 +56,20 @@ export const TransactionCartExpanded = ({ onMinimize }: TransactionCartExpandedP
   }
 
   const pendingCount = transactions.filter(tx => tx.status === 'pending' || tx.status === undefined).length
+
+  // Plan the pending cart's execution: contiguous batchable entries collapse
+  // into multicall segments; everything else falls into sequential segments.
+  // Safe wallets bypass segmentation entirely — their SDK batches natively.
+  const { plan, nonPending } = useMemo(() => {
+    if (isSafe) return { plan: [], nonPending: transactions }
+    const pending: CartTransaction[] = []
+    const nonPending: CartTransaction[] = []
+    for (const tx of transactions) {
+      if (tx.status === 'pending' || tx.status === undefined) pending.push(tx)
+      else nonPending.push(tx)
+    }
+    return { plan: planExecution(pending), nonPending }
+  }, [transactions, isSafe])
 
   return (
     <div className="overflow-hidden">
@@ -131,8 +164,14 @@ export const TransactionCartExpanded = ({ onMinimize }: TransactionCartExpandedP
             <p className="text-parchment/60 text-sm">No transactions in queue</p>
             <p className="text-parchment/40 text-xs mt-2">Add delegations or claims to batch execute them</p>
           </div>
-        ) :
-          transactions.map((tx, index) => {
+        ) : (() => {
+          // `index` here is the row's overall position in `transactions`, so
+          // moveUp/moveDown still work against the underlying cart order.
+          // `indented` adds a subtle visual indent for rows wrapped under the
+          // Multicall3 batch header — readers can see at a glance which rows
+          // belong to the batch.
+          const renderRow = (tx: CartTransaction, indented: boolean) => {
+            const index = transactions.indexOf(tx)
             const isCurrentlyExecuting = currentExecutingId === tx.id
             const isPending = isExecuting && !isCurrentlyExecuting
             const canMoveUp = index > 0 && !isExecuting
@@ -142,7 +181,7 @@ export const TransactionCartExpanded = ({ onMinimize }: TransactionCartExpandedP
             return (
               <div
                 key={tx.id}
-                className={`border-b border-parchment/10 last:border-b-0 transition-all ${isCurrentlyExecuting
+                className={`border-b border-parchment/10 last:border-b-0 transition-all ${indented ? 'pl-2 sm:pl-4 bg-aqua/[0.02]' : ''} ${isCurrentlyExecuting
                     ? 'bg-chartreuse/10 border-l-4 border-l-chartreuse'
                     : isPending
                       ? 'bg-parchment/5 opacity-50'
@@ -237,7 +276,48 @@ export const TransactionCartExpanded = ({ onMinimize }: TransactionCartExpandedP
                 {isExpanded && <TransactionCartDetailsExpanded transaction={tx} />}
               </div>
             )
-          })}
+          }
+
+          return (
+            <>
+              {/* Non-batched rows render first (completed/failed history when a
+                  prior multicall executed, or all rows when no batch applies). */}
+              {/* Non-pending entries first (history of completed/failed). */}
+              {nonPending.map((tx) => renderRow(tx, false))}
+
+              {/* Plan segments — multicall segments get a collapsible header,
+                  sequential segments render flat. Empty plan (Safe wallet)
+                  means nothing extra below the non-pending block. */}
+              {plan.map((segment, segIdx) => {
+                if (segment.kind === 'sequential') {
+                  return (
+                    <Fragment key={`seq-${segIdx}-${segment.entries[0].id}`}>
+                      {segment.entries.map((tx) => renderRow(tx, false))}
+                    </Fragment>
+                  )
+                }
+
+                // Multicall segment — header wraps the entries. Identity for
+                // the collapse state comes from the first entry's id (stable
+                // across renders of the same segment).
+                const segmentId = segment.entries[0].id
+                const isSegmentExpanded = !collapsedSegmentIds.has(segmentId)
+                const isSegmentExecuting = segment.entries.some((e) => e.status === 'executing')
+                return (
+                  <Fragment key={`mc-${segmentId}`}>
+                    <MulticallBatchHeader
+                      transactions={segment.entries}
+                      isExpanded={isSegmentExpanded}
+                      onToggle={() => toggleSegment(segmentId)}
+                      isExecuting={isSegmentExecuting}
+                    />
+                    {isSegmentExpanded && segment.entries.map((tx) => renderRow(tx, true))}
+                  </Fragment>
+                )
+              })}
+            </>
+          )
+        })()}
       </div>
     </div>
   )

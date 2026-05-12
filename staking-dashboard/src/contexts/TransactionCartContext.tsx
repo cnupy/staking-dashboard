@@ -13,13 +13,14 @@ import type {
   SelfStakeMetadata,
   WalletDirectStakeMetadata,
   ClaimMetadata,
+  UnstakeMetadata,
   RawTransaction,
   TransactionStatus,
   CartTransaction,
   AddTransactionOptions,
   TransactionCartContextType
 } from "./TransactionCartContextType"
-import { ClaimStepType, ClaimStepTypeName } from "./TransactionCartContextType"
+import { ClaimStepType, ClaimStepTypeName, UnstakeStepType, UnstakeStepTypeName } from "./TransactionCartContextType"
 
 // Re-export types for backwards compatibility
 export type {
@@ -28,13 +29,14 @@ export type {
   SelfStakeMetadata,
   WalletDirectStakeMetadata,
   ClaimMetadata,
+  UnstakeMetadata,
   RawTransaction,
   TransactionStatus,
   CartTransaction,
   AddTransactionOptions
 }
 
-export { ClaimStepType, ClaimStepTypeName }
+export { ClaimStepType, ClaimStepTypeName, UnstakeStepType, UnstakeStepTypeName }
 
 const TransactionCartContext = createContext<TransactionCartContextType | undefined>(undefined)
 
@@ -83,6 +85,27 @@ export function TransactionCartProvider({ children }: TransactionCartProviderPro
   const checkTransactionInQueue = useCallback((transaction: RawTransaction): boolean => {
     const signature = getTransactionSignature(transaction)
     return transactions.some(tx => getTransactionSignature(tx.transaction) === signature)
+  }, [transactions])
+
+  /**
+   * Identity-based variant for "is an entry for this logical operation already
+   * queued?". Matches by `metadata.stepType` + `metadata.stepGroupIdentifier`
+   * (the cart's stable per-operation identity), rather than by raw calldata
+   * hash. Use this when underlying chain data (e.g. a rollup version, an
+   * attester address being refetched) could change between renders and would
+   * make `checkTransactionInQueue` flicker false — leading users to add
+   * duplicate entries.
+   */
+  const checkStepGroupInQueue = useCallback((
+    stepType: string | number,
+    stepGroupIdentifier: string,
+  ): boolean => {
+    return transactions.some((tx) => {
+      const meta = tx.metadata
+      return !!meta && 'stepType' in meta && 'stepGroupIdentifier' in meta &&
+        meta.stepType === stepType &&
+        meta.stepGroupIdentifier === stepGroupIdentifier
+    })
   }, [transactions])
 
   /**
@@ -324,6 +347,7 @@ export function TransactionCartProvider({ children }: TransactionCartProviderPro
         moveUp,
         moveDown,
         checkTransactionInQueue,
+        checkStepGroupInQueue,
         getTransaction,
         getTransactionByTx,
         isSafe: isSafeApp,
