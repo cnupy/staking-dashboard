@@ -1,5 +1,5 @@
 import type { Address } from "viem"
-import { useAttesterView } from "./useAttesterView"
+import { useAttesterViewBestEffort } from "./useAttesterViewBestEffort"
 import { useEjectionThreshold } from "./useEjectionThreshold"
 import { useActivationThresholdFormatted } from "./useActivationThresholdFormatted"
 
@@ -8,21 +8,27 @@ export interface StakeHealth {
   activationThreshold: bigint | undefined
   ejectionThreshold: bigint | undefined
   healthPercentage: number
-  slashCount: number
+  /** Cumulative amount lost from the original activation stake (>= 0). */
+  lossAmount: bigint
+  /** `lossAmount` as a percentage of `activationThreshold`. 0 when at full stake. */
+  lossPercentage: number
   isAtRisk: boolean
   isCritical: boolean
 }
 
-// Slash amount is 2,000 tokens with 18 decimals
-const SLASH_AMOUNT = 2000n * 10n ** 18n
-
 /**
- * Hook to calculate stake health for an attester
- * Returns health percentage, slash count estimate, and risk indicators
+ * Hook to calculate stake health for an attester. Returns health percentage,
+ * the cumulative loss (raw + percentage of activation threshold), and risk
+ * indicators.
  *
  * Health percentage is calculated as:
  * - 100% = effectiveBalance equals activationThreshold (full stake, no slashes)
  * - 0% = effectiveBalance equals or below ejectionThreshold (will be ejected)
+ *
+ * `lossAmount` / `lossPercentage` capture how much stake has been slashed
+ * regardless of the per-slash penalty. The slasher contract sets the penalty
+ * (and it changes over time), so we derive the loss purely from on-chain
+ * balance rather than estimating a count.
  *
  * Risk levels:
  * - isAtRisk: healthPercentage < 50 (has been slashed significantly)
@@ -32,8 +38,13 @@ export function useStakeHealth(
   attesterAddress: Address | undefined,
   rollupAddress: Address | undefined,
 ) {
-  const { effectiveBalance, status, isLoading: isLoadingAttester, error: attesterError, refetch: refetchAttester } =
-    useAttesterView(attesterAddress, rollupAddress)
+  const {
+    effectiveBalance,
+    status,
+    isLoading: isLoadingAttester,
+    error: attesterError,
+    refetch: refetchAttester,
+  } = useAttesterViewBestEffort(attesterAddress, rollupAddress)
 
   const { ejectionThreshold, isLoading: isLoadingEjection, error: ejectionError, refetch: refetchEjection } =
     useEjectionThreshold()
@@ -45,27 +56,35 @@ export function useStakeHealth(
   const error = attesterError || ejectionError || activationError
 
   let healthPercentage = 100
-  let slashCount = 0
+  let lossAmount = 0n
+  let lossPercentage = 0
   let isAtRisk = false
   let isCritical = false
 
   if (effectiveBalance !== undefined && activationThreshold !== undefined && ejectionThreshold !== undefined) {
-    // Calculate health as percentage between ejection threshold (0%) and activation threshold (100%)
-    const healthRange = activationThreshold - ejectionThreshold
-    const currentHealth = effectiveBalance - ejectionThreshold
-
-    if (healthRange > 0n) {
+    // `healthPercentage` is "how much of the cushion between activation and
+    // ejection thresholds is left". This drives bar fill + color, since what
+    // the user actually cares about is proximity to ejection. The cumulative
+    // loss (`lossAmount` / `lossPercentage` below) is surfaced separately as
+    // a headline so a small slash isn't visually misread as "near ejection".
+    const cushionRange = activationThreshold - ejectionThreshold
+    const cushionLeft = effectiveBalance - ejectionThreshold
+    if (cushionRange > 0n) {
       healthPercentage = Math.max(0, Math.min(100,
-        Number((currentHealth * 100n) / healthRange)
+        Number((cushionLeft * 100n) / cushionRange)
       ))
     }
 
-    // Estimate slash count based on how much stake has been lost
+    // Cumulative loss vs the activation threshold. Bigint subtraction with a
+    // floor at 0 — effectiveBalance can briefly exceed activation in edge cases.
     if (effectiveBalance < activationThreshold) {
-      slashCount = Number((activationThreshold - effectiveBalance) / SLASH_AMOUNT)
+      lossAmount = activationThreshold - effectiveBalance
+      if (activationThreshold > 0n) {
+        // 10000 scale so 1% loss shows as 1.00 rather than rounding to 1.
+        lossPercentage = Number((lossAmount * 10000n) / activationThreshold) / 100
+      }
     }
 
-    // Risk indicators
     isAtRisk = healthPercentage < 50
     isCritical = effectiveBalance <= ejectionThreshold
   }
@@ -80,7 +99,8 @@ export function useStakeHealth(
     activationThreshold,
     ejectionThreshold,
     healthPercentage,
-    slashCount,
+    lossAmount,
+    lossPercentage,
     isAtRisk,
     isCritical,
     status,

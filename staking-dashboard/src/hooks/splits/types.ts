@@ -6,5 +6,3 @@ export interface SplitData {
   totalAllocation: bigint
   distributionIncentive: number
 }
-
-export type ClaimStep = 'idle' | 'claiming' | 'distributing' | 'withdrawing'

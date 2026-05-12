@@ -1,143 +1,115 @@
-import { useEffect, useMemo } from "react"
 import { useAccount } from "wagmi"
-import { useClaimSplitRewards } from "@/hooks/splits"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
-import { useAlert } from "@/contexts/AlertContext"
-import { useSequencerRewards } from "@/hooks/rollup/useSequencerRewards"
 import { useERC20Balance } from "@/hooks/erc20/useERC20Balance"
 import { useWarehouseBalance } from "@/hooks/splits/useWarehouseBalance"
 import { useSplitsWarehouse } from "@/hooks/splits/useSplitsWarehouse"
+import { useTransactionCart } from "@/contexts/TransactionCartContext"
+import { Icon } from "@/components/Icon"
+import {
+  buildDelegationClaimEntries,
+  buildWarehouseWithdrawEntry,
+  type ClaimCartEntry,
+} from "@/utils/claimCart"
 import type { Address } from "viem"
 
 interface ClaimDelegationRewardsButtonProps {
   splitContract: Address
   providerTakeRate: number
   providerRewardsRecipient: Address
+  /** Used in cart-entry descriptions so the user can tell entries apart at a glance. */
+  providerName?: string | null
+  /** Full per-rollup `getSequencerRewards(splitContract)` breakdown. The helper
+   *  picks out the canonical row and treats the rest as stranded balances to
+   *  claim before the canonical claim. */
+  rollupRewardsByRollup: Array<{ rollupAddress: Address; rollupVersion: string; rewards: bigint }>
   onSuccess?: () => void
   variant?: 'default' | 'modal'
 }
 
 /**
- * Button component for claiming delegation rewards
- * Handles the complete claim flow (claim → distribute → withdraw)
- * Shows skip messages when steps have zero balance
+ * Adds the delegation claim flow to the transaction cart. Entries come from the
+ * shared `buildDelegationClaimEntries` helper so this matches the bulk-claim and
+ * "claim all" entry points exactly — same labels, descriptions, and dependsOn
+ * wiring.
  */
 export const ClaimDelegationRewardsButton = ({
   splitContract,
   providerTakeRate,
   providerRewardsRecipient,
+  providerName,
+  rollupRewardsByRollup,
   onSuccess,
   variant = 'default'
 }: ClaimDelegationRewardsButtonProps) => {
-  const { address: beneficiary } = useAccount() // TODO : should get the address from atp.beneficiary to handle the condition where the connected address is operator
-  const { stakingAssetAddress: tokenAddress } = useStakingAssetTokenDetails()
-  const { showAlert } = useAlert()
+  const { address: beneficiary } = useAccount()
+  const { stakingAssetAddress: tokenAddress, decimals, symbol } = useStakingAssetTokenDetails()
 
-  // Fetch balances for skip logic - extract refetch functions
   const { warehouseAddress } = useSplitsWarehouse(splitContract)
-  const { rewards: rollupBalance, refetch: refetchRollup } = useSequencerRewards(splitContract)
-  const { balance: splitContractBalance, refetch: refetchSplitContract } = useERC20Balance(tokenAddress!, splitContract)
-  const { balance: warehouseBalance, refetch: refetchWarehouse } = useWarehouseBalance(warehouseAddress, beneficiary, tokenAddress)
+  const { balance: splitContractBalance } = useERC20Balance(tokenAddress!, splitContract)
+  const { balance: warehouseBalance } = useWarehouseBalance(warehouseAddress, beneficiary, tokenAddress)
 
-  // Calculate split allocations based on provider take rate
-  const totalAllocation = 10000n
-  const providerAllocation = BigInt(providerTakeRate)
-  const userAllocation = totalAllocation - providerAllocation
+  const { addTransaction, checkTransactionInQueue, openCart, replaceTransactionByTx } = useTransactionCart()
 
-  // Recipients order: [provider, user] - matches contract
-  const splitData = {
-    recipients: [providerRewardsRecipient, beneficiary as Address],
-    allocations: [providerAllocation, userAllocation],
-    totalAllocation,
-    distributionIncentive: 0
-  }
+  const providerLabel = providerName ?? "delegation"
 
-  // Memoize balances object to prevent effect re-runs on every render
-  const balances = useMemo(() => ({
-    rollupBalance,
-    splitContractBalance,
-    warehouseBalance,
-    refetchRollup,
-    refetchSplitContract,
-    refetchWarehouse
-  }), [rollupBalance, splitContractBalance, warehouseBalance, refetchRollup, refetchSplitContract, refetchWarehouse])
+  const currentSplitBalance = splitContractBalance ?? 0n
+  const currentWarehouseBalance = warehouseBalance ?? 0n
+  const totalRollupRewards = rollupRewardsByRollup.reduce((sum, r) => sum + r.rewards, 0n)
 
-  const {
-    claim,
-    claimStep,
-    skipMessage,
-    completedMessage,
-    isClaiming,
-    isSuccess,
-    error
-  } = useClaimSplitRewards(
-    splitContract,
-    splitData,
-    tokenAddress!,
-    beneficiary as Address,
-    balances
-  )
+  const hasRewards =
+    totalRollupRewards > 0n ||
+    currentSplitBalance > 0n ||
+    currentWarehouseBalance > 0n
 
-  // Call onSuccess callback when claim completes
-  useEffect(() => {
-    if (isSuccess && onSuccess) {
-      onSuccess()
+  const isReady = !!warehouseAddress && !!tokenAddress && !!beneficiary
+  const isDisabled = !isReady || !hasRewards
+
+  // Build the candidate entries up-front (without adding) so we can detect
+  // whether any are already in the cart for the "in batch" indicator.
+  //
+  // `entries` (claims + distribute) have calldata unique to this delegation.
+  // `withdraw` is a singleton across delegations for the same user/token —
+  // its calldata is identical regardless of which delegation queued it. The
+  // `isInBatch` derivation below treats it as "in batch when present" rather
+  // than excluding it: with `addTransaction(..., preventDuplicate: true)` for
+  // entries and `replaceTransactionByTx` for withdraw, the cart always ends
+  // up with at most one withdraw, and whether *any* withdraw is queued is
+  // exactly the signal we want.
+  const built = (() => {
+    if (!isReady || !tokenAddress || !beneficiary || !warehouseAddress) {
+      return { entries: [], withdraw: null as ClaimCartEntry | null }
     }
-  }, [isSuccess, onSuccess])
-
-  // Handle errors - show all errors, not just rejections
-  useEffect(() => {
-    if (error) {
-      const errorMessage = error.message
-      if (errorMessage.includes('User rejected') || errorMessage.includes('rejected')) {
-        showAlert('warning', 'Transaction was cancelled')
-      } else {
-        // Show error for all other failures
-        showAlert('error', `Claim failed: ${errorMessage}`)
-      }
-    }
-  }, [error, showAlert])
-
-  const handleClaim = () => {
-    if (!tokenAddress || !beneficiary) return
-    claim()
-  }
-
-  // Check if there are any rewards to claim
-  const hasRewards = (rollupBalance || 0n) > 0n || (splitContractBalance || 0n) > 0n || (warehouseBalance || 0n) > 0n
-
-  // Button state logic
-  const isDisabled = isClaiming || !warehouseAddress || !hasRewards
-
-  const getButtonText = () => {
-    if (isClaiming) {
-      // Show completed message if available
-      if (completedMessage) return completedMessage
-      // Show skip message if available
-      if (skipMessage) return skipMessage
-
-      if (claimStep === 'claiming') return 'Claiming'
-      if (claimStep === 'distributing') return 'Distributing'
-      return 'Withdrawing'
-    }
-    return 'Claim'
-  }
-
-  const getTitle = () => {
-    if (!warehouseAddress) return 'Loading warehouse address...'
-    if (!hasRewards) return 'No rewards available to claim'
-    if (isClaiming) {
-      // Show completed message in tooltip if available
-      if (completedMessage) return completedMessage
-      // Show skip message in tooltip if available
-      if (skipMessage) return skipMessage
-
-      if (claimStep === 'claiming') return 'Claiming rewards from rollup...'
-      if (claimStep === 'distributing') return 'Distributing rewards...'
-      return 'Withdrawing rewards...'
-    }
-    return 'Claim delegation rewards'
-  }
+    const { entries, distributeGroup } = buildDelegationClaimEntries({
+      splitContract,
+      providerTakeRate,
+      providerRewardsRecipient,
+      providerLabel,
+      rollupRewardsByRollup,
+      beneficiary,
+      tokenAddress,
+      decimals: decimals ?? 18,
+      symbol: symbol ?? "",
+    })
+    const withdraw = entries.length > 0 || currentWarehouseBalance > 0n
+      ? buildWarehouseWithdrawEntry({
+          warehouseAddress,
+          beneficiary,
+          tokenAddress,
+          dependsOnDistributeGroup: distributeGroup,
+        })
+      : null
+    return { entries, withdraw }
+  })()
+  // "In batch" requires every entry this button would queue to already be in
+  // the cart — claims, distribute, AND the warehouse withdraw (treated as a
+  // shared singleton; any queued withdraw counts because there is only one).
+  // Using `.every()` rather than `.some()` makes the button stay actionable
+  // when state changes add a new candidate (e.g. an additional rollup
+  // balance, or a new delegation under the bulk button) — those new entries
+  // get added on the next click instead of being locked out.
+  const candidates = built.withdraw ? [...built.entries, built.withdraw] : built.entries
+  const isInBatch = candidates.length > 0
+    && candidates.every((e) => checkTransactionInQueue(e.transaction))
 
   const buttonClass = variant === 'modal'
     ? `px-6 py-3 bg-chartreuse text-ink font-oracle-standard font-bold text-sm uppercase tracking-wider hover:bg-chartreuse/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed`
@@ -146,20 +118,64 @@ export const ClaimDelegationRewardsButton = ({
       : 'border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90'
     }`
 
+  const handleAddToBatch = () => {
+    for (const entry of built.entries) {
+      addTransaction(entry, { preventDuplicate: true })
+    }
+    // Withdraw calldata is identical across delegations for the same user/token,
+    // so `addTransaction` with `preventDuplicate` would silently drop a second
+    // add — leaving the previously queued withdraw wired to an EARLIER
+    // delegation's distribute and stranding this delegation's distributed
+    // share in the warehouse. `replaceTransactionByTx` swaps any existing
+    // withdraw entry for the fresh one (which depends on this delegation's
+    // distribute group) atomically.
+    if (built.withdraw) {
+      replaceTransactionByTx(built.withdraw.transaction, built.withdraw)
+    }
+    onSuccess?.()
+    openCart()
+  }
+
+  const handleClick = () => {
+    if (isInBatch) {
+      // Same as the add-path: let the parent (e.g., modal) close itself, then
+      // surface the cart. Without `onSuccess` here, the modal stays open and
+      // obscures the cart panel.
+      onSuccess?.()
+      openCart()
+      return
+    }
+    handleAddToBatch()
+  }
+
+  const getButtonText = () => {
+    if (!warehouseAddress) return 'Loading...'
+    if (!hasRewards) return 'No Rewards'
+    if (isInBatch) return variant === 'modal' ? 'In Batch — Open Cart' : 'In Batch'
+    return variant === 'modal' ? 'Add to Batch' : 'Add'
+  }
+
+  const getTitle = () => {
+    if (!warehouseAddress) return 'Loading warehouse address...'
+    if (!hasRewards) return 'No rewards available to claim'
+    if (isInBatch) return 'Already added to the transaction batch — open the cart to execute'
+    return 'Add the full delegation claim flow to the transaction batch'
+  }
+
   return (
     <button
-      onClick={handleClaim}
-      disabled={isDisabled}
+      onClick={handleClick}
+      disabled={isDisabled && !isInBatch}
       className={buttonClass}
       title={getTitle()}
     >
-      {isClaiming ? (
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 border rounded-full border-ink/30 border-t-ink animate-spin"></div>
+      {isInBatch ? (
+        <span className="flex items-center justify-center gap-2">
+          <Icon name="shoppingCart" size="sm" />
           <span>{getButtonText()}</span>
-        </div>
+        </span>
       ) : (
-        variant === 'modal' ? 'Claim Rewards' : 'Claim'
+        getButtonText()
       )}
     </button>
   )

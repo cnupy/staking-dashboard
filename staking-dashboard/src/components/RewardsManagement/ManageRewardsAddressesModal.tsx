@@ -50,9 +50,11 @@ export const ManageRewardsAddressesModal = ({
 
   const addCoinbaseAddress = useAddCoinbaseAddress()
 
-  // Get rewards for all coinbase addresses
+  // Get rewards for all coinbase addresses. Use `allCoinbaseBreakdown` so rows with
+  // zero balance across every rollup still render — users need to be able to remove
+  // saved addresses that haven't earned anything yet.
   const {
-    coinbaseBreakdown,
+    allCoinbaseBreakdown,
     isLoading: isLoadingCoinbaseRewards,
     refetch: refetchCoinbaseRewards
   } = useMultipleCoinbaseRewards(coinbaseAddresses as Address[])
@@ -206,7 +208,7 @@ export const ManageRewardsAddressesModal = ({
                   Your Coinbase Addresses
                 </div>
                 <CoinbaseAddressList
-                  coinbaseBreakdown={coinbaseBreakdown}
+                  coinbaseBreakdown={allCoinbaseBreakdown}
                   decimals={decimals ?? 18}
                   symbol={symbol ?? ""}
                   isRewardsClaimable={isRewardsClaimable ?? false}

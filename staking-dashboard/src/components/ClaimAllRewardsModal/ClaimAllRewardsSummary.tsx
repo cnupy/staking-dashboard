@@ -41,15 +41,18 @@ export const ClaimAllRewardsSummary = ({
 
   return (
     <div className="space-y-6">
-      {/* Rewards Locked Warning */}
+      {/* Configured-rollup locked banner — informational only. Per-task rollups handle
+          their own gating, so claims on other rollups may still succeed; failed tasks
+          surface via the engine's retry flow. */}
       {!isRewardsClaimable && (
         <div className="bg-amber-500/10 border border-amber-500/30 p-4">
           <div className="flex items-start gap-3">
             <Icon name="warning" size="md" className="text-amber-500 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-amber-500 font-bold text-sm">Rewards Locked</p>
+              <p className="text-amber-500 font-bold text-sm">Configured Rollup Locked</p>
               <p className="text-parchment/60 text-xs mt-1">
-                Rewards are currently locked and cannot be claimed. Check back later.
+                Rewards on the configured rollup are currently locked. Claims targeting
+                other rollup versions may still succeed; failed tasks will be marked individually.
               </p>
             </div>
           </div>
@@ -80,6 +83,16 @@ export const ClaimAllRewardsSummary = ({
                 ? (delegation.rewards * 10000n) / BigInt(10000 - delegation.providerTakeRate)
                 : 0n
 
+              // One claim per rollup with balance, plus distribute + a single
+              // warehouse withdraw shared across the whole batch.
+              const claimsPerRollup = (delegation.rollupRewardsByRollup ?? []).filter(
+                (r) => r.rewards > 0n,
+              )
+              const totalTxs = claimsPerRollup.length + 1 // claims + distribute
+              const claimsLabel = claimsPerRollup
+                .map((r) => `claim v${r.rollupVersion}`)
+                .join(", ")
+
               return (
                 <div
                   key={delegation.splitContract}
@@ -107,7 +120,7 @@ export const ClaimAllRewardsSummary = ({
                     </div>
                   </div>
                   <div className="mt-2 text-xs text-parchment/40">
-                    3 transactions: claim, distribute, withdraw
+                    {totalTxs} transactions: {claimsLabel ? `${claimsLabel}, ` : ""}distribute (+ shared withdraw)
                   </div>
                 </div>
               )
@@ -125,11 +138,11 @@ export const ClaimAllRewardsSummary = ({
           <div className="space-y-2">
             {coinbasesWithRewards.map((coinbase) => (
               <div
-                key={coinbase.address}
+                key={`${coinbase.address}-${coinbase.rollupAddress}`}
                 className="bg-parchment/5 border border-parchment/20 p-3"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-parchment/20 text-parchment/80 text-xs font-bold uppercase tracking-wide">
                       <Icon name="wallet" size="sm" />
                       Coinbase
@@ -137,6 +150,14 @@ export const ClaimAllRewardsSummary = ({
                     <span className="font-mono text-xs text-parchment/60">
                       {coinbase.address.slice(0, 6)}...{coinbase.address.slice(-4)}
                     </span>
+                    {coinbase.rollupVersion !== undefined && (
+                      <span
+                        className="font-oracle-standard text-[10px] uppercase tracking-wide bg-aqua/15 border border-aqua/30 text-aqua px-2 py-0.5"
+                        title={`Rollup contract: ${coinbase.rollupAddress}`}
+                      >
+                        Rollup v{coinbase.rollupVersion}
+                      </span>
+                    )}
                   </div>
                   <div className="font-mono text-sm font-bold text-chartreuse">
                     {formatTokenAmountFull(coinbase.rewards, decimals, symbol)}
@@ -184,23 +205,21 @@ export const ClaimAllRewardsSummary = ({
         </div>
       )}
 
-      {/* Claim Button */}
+      {/* Claim Button — no longer gated by the configured rollup's `isRewardsClaimable`.
+          Per-task rollups handle their own gating; failed tasks surface via retry. */}
       <button
         onClick={onStartClaiming}
-        disabled={isDisabled || !hasRewards || !isRewardsClaimable}
+        disabled={isDisabled || !hasRewards}
         className="w-full py-4 bg-chartreuse text-ink font-oracle-standard font-bold text-sm uppercase tracking-wider hover:bg-chartreuse/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {!isRewardsClaimable
-          ? "Rewards Locked"
-          : !hasRewards
-            ? "No Rewards to Claim"
-            : "Claim All Rewards"}
+        {!hasRewards ? "No Rewards to Claim" : "Add All to Batch"}
       </button>
 
       {/* Transaction Info */}
-      {hasRewards && isRewardsClaimable && (
+      {hasRewards && (
         <p className="text-xs text-parchment/40 text-center">
-          This will require multiple transactions. Each claim will prompt for approval.
+          Adds every claim leg to your transaction cart with the right execution order.
+          Open the cart panel to review and sign.
         </p>
       )}
     </div>

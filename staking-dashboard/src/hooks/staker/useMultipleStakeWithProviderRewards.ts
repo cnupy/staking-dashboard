@@ -1,8 +1,10 @@
+import { useMemo } from 'react'
 import { useReadContracts } from 'wagmi'
+import type { Address } from 'viem'
 import { ERC20Abi } from '@/contracts/abis/ERC20'
 import { calculateTotalUserShareFromSplitRewards } from '@/utils/rewardCalculations'
 import { useStakingAssetTokenDetails } from '@/hooks/stakingRegistry'
-import { contracts } from '@/contracts'
+import { contracts, getRollupVersions, type RollupVersion } from '@/contracts'
 import type { Delegation } from '@/hooks/atp'
 import type { StakeWithProviderReward } from './types'
 
@@ -12,12 +14,15 @@ interface MultipleStakeWithProviderRewardsParams {
 }
 
 /**
- * Hook to calculate rewards for multiple delegations (stakeWithProvider method)
+ * Hook to calculate rewards for multiple delegations (stakeWithProvider method).
  *
- * Reward Calculation Logic:
- * 1. Get rollup rewards: rollup.getSequencerRewards(splitContract)
- * 2. Get split contract balance: stakingToken.balanceOf(splitContract)
- * 3. Calculate user's share from both sources using take rate
+ * Fans `getSequencerRewards(splitContract)` out across every rollup version the
+ * Registry has indexed so balances on old rollups still show up in totals and
+ * drive the per-rollup claim fan-out. Also queries each split contract's ERC20
+ * balance for the post-claim distribute calc.
+ *
+ * Layout of the multicall, per delegation (stride = rollups.length + 1):
+ *   [getSequencerRewards@r1, getSequencerRewards@r2, ..., balanceOf(split)]
  */
 export const useMultipleStakeWithProviderRewards = ({
   delegations,
@@ -25,27 +30,42 @@ export const useMultipleStakeWithProviderRewards = ({
 }: MultipleStakeWithProviderRewardsParams) => {
   const { stakingAssetAddress: tokenAddress } = useStakingAssetTokenDetails()
 
-  // Build contracts array for both rollup rewards and split balance queries
+  // Rollups enumerated oldest first. Raw version ids are uint256s; we replace
+  // them with 1-based ordinals ("v1", "v2", …) for display.
+  const rollups = useMemo<Array<{ address: Address; version: string }>>(() => {
+    const versions = getRollupVersions()
+    if (versions.length > 0) {
+      return versions.map((v: RollupVersion, i) => ({
+        address: v.address,
+        version: String(i + 1),
+      }))
+    }
+    return [{ address: contracts.rollup.address, version: '?' }]
+  }, [])
+
+  // Multicall size grows as `delegations.length * (rollups.length + 1)`. With
+  // the current mainnet shape (2 rollups, single-digit delegations per user)
+  // this is tiny. If the Registry adds many more rollups, or a user holds
+  // dozens of delegations, consider chunking or adding an `enabled` gate per
+  // delegation so we don't refetch the entire matrix on every action.
+  const callsPerDelegation = rollups.length + 1
   const rewardContracts = tokenAddress && delegations.length > 0
-    ? delegations.flatMap(delegation => [
-        // Query rollup rewards
-        {
-          address: contracts.rollup.address,
+    ? delegations.flatMap((delegation) => [
+        ...rollups.map((r) => ({
+          address: r.address,
           abi: contracts.rollup.abi,
           functionName: 'getSequencerRewards',
-          args: [delegation.splitContract as `0x${string}`],
-        },
-        // Query split contract balance
+          args: [delegation.splitContract as Address],
+        })),
         {
-          address: tokenAddress as `0x${string}`,
+          address: tokenAddress as Address,
           abi: ERC20Abi,
           functionName: 'balanceOf',
-          args: [delegation.splitContract as `0x${string}`],
+          args: [delegation.splitContract as Address],
         },
       ])
     : []
 
-  // Get rewards from both rollup and split contracts
   const { data: rewardData, isLoading, error, refetch } = useReadContracts({
     contracts: rewardContracts,
     query: {
@@ -53,17 +73,26 @@ export const useMultipleStakeWithProviderRewards = ({
     },
   })
 
-  // Calculate user rewards for each delegation
-  const delegationRewards: StakeWithProviderReward[] = delegations.map((delegation, index) => {
-    const rollupRewards = (rewardData?.[index * 2]?.result as bigint) || 0n
-    const splitBalance = (rewardData?.[index * 2 + 1]?.result as bigint) || 0n
+  const delegationRewards: StakeWithProviderReward[] = delegations.map((delegation, dIdx) => {
+    const baseIndex = dIdx * callsPerDelegation
+    const rollupRewardsByRollup = rollups.map((r, rIdx) => {
+      const result = rewardData?.[baseIndex + rIdx]
+      const rewards = (result?.result as bigint | undefined) ?? 0n
+      return {
+        rollupAddress: r.address,
+        rollupVersion: r.version,
+        rewards,
+      }
+    })
+    const rollupRewardsTotal = rollupRewardsByRollup.reduce((sum, r) => sum + r.rewards, 0n)
+    const splitBalance = (rewardData?.[baseIndex + rollups.length]?.result as bigint | undefined) ?? 0n
 
-    const totalRewards = rollupRewards + splitBalance
+    const totalRewards = rollupRewardsTotal + splitBalance
     const userRewards = calculateTotalUserShareFromSplitRewards(
-      rollupRewards,
+      rollupRewardsTotal,
       splitBalance,
-      0n, // warehouse balance (omitted for this flow)
-      delegation.providerTakeRate
+      0n, // warehouse balance — omitted; surfaced separately via useWarehouseBalance
+      delegation.providerTakeRate,
     )
 
     return {
@@ -71,12 +100,15 @@ export const useMultipleStakeWithProviderRewards = ({
       splitContract: delegation.splitContract,
       totalRewards,
       userRewards,
-      takeRate: delegation.providerTakeRate
+      takeRate: delegation.providerTakeRate,
+      rollupRewardsByRollup,
     }
   })
 
-  // Calculate total user rewards across all delegations
-  const totalUserRewards = delegationRewards.reduce((sum, delegation) => sum + delegation.userRewards, 0n)
+  const totalUserRewards = delegationRewards.reduce(
+    (sum, delegation) => sum + delegation.userRewards,
+    0n,
+  )
 
   return {
     delegationRewards,
@@ -84,6 +116,6 @@ export const useMultipleStakeWithProviderRewards = ({
     isLoading,
     error,
     isSuccess: !!rewardData,
-    refetch
+    refetch,
   }
 }

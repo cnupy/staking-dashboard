@@ -54,6 +54,22 @@ export interface RollupVersion {
 let _canonicalRollupAddress: Address | null = null;
 let _rollupVersions: RollupVersion[] = [];
 
+// Runtime schema for the `/api/rollups` response. These addresses feed into
+// `writeContract` targets when users claim rewards, so validate them at the
+// trust boundary — a malformed / poisoned indexer response should fail fast
+// rather than silently route a tx to an unchecked string.
+const rollupVersionSchema = z.object({
+  version: z.string(),
+  address: addressSchema,
+  blockNumber: z.number(),
+  timestamp: z.number(),
+});
+
+const rollupsApiResponseSchema = z.object({
+  canonical: addressSchema.nullable(),
+  versions: z.array(rollupVersionSchema),
+});
+
 export async function initRollupVersions(): Promise<Address> {
   const apiHost = import.meta.env.VITE_API_HOST;
   if (!apiHost) {
@@ -64,10 +80,12 @@ export async function initRollupVersions(): Promise<Address> {
   if (!res.ok) {
     throw new Error(`/api/rollups returned ${res.status}`);
   }
-  const body = (await res.json()) as {
-    canonical: string | null;
-    versions: RollupVersion[];
-  };
+
+  const parsed = rollupsApiResponseSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    throw new Error(`/api/rollups returned an invalid response: ${parsed.error.message}`);
+  }
+  const body = parsed.data;
 
   if (!body.canonical || body.versions.length === 0) {
     throw new Error(
@@ -76,7 +94,7 @@ export async function initRollupVersions(): Promise<Address> {
   }
 
   _rollupVersions = body.versions;
-  _canonicalRollupAddress = body.canonical as Address;
+  _canonicalRollupAddress = body.canonical;
   return _canonicalRollupAddress;
 }
 

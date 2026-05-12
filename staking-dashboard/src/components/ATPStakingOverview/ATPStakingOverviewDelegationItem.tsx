@@ -5,10 +5,8 @@ import { formatTokenAmount } from "@/utils/atpFormatters"
 import { getValidatorDashboardValidatorUrl } from "@/utils/validatorDashboardUtils"
 import { getExplorerTxUrl } from "@/utils/explorerUtils"
 import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
-import { useClaimAllContext } from "@/contexts/ClaimAllContext"
 import type { ATPData } from "@/hooks/atp"
 import type { DelegationBreakdown, Erc20DelegationBreakdown } from "@/hooks/atp/useAggregatedStakingData"
-import type { Address } from "viem"
 
 interface ATPStakingOverviewDelegationItemProps {
   delegation: DelegationBreakdown | Erc20DelegationBreakdown
@@ -34,26 +32,8 @@ export const ATPStakingOverviewDelegationItem = ({
   onWalletClick,
   onClaimClick
 }: ATPStakingOverviewDelegationItemProps) => {
-  const { getSplitStatus, claimAllHook } = useClaimAllContext()
   const { isRewardsClaimable } = useIsRewardsClaimable()
   const isWallet = variant === 'wallet'
-
-  const splitStatus = getSplitStatus(delegation.splitContract as Address)
-  const isInBatch = splitStatus !== 'idle'
-  const isProcessingInBatch = splitStatus === 'processing'
-
-  const getButtonText = () => {
-    if (!isProcessingInBatch) return 'Claim'
-
-    // Show completed message if available
-    if (claimAllHook.completedMessage) return claimAllHook.completedMessage
-    // Show skip message if available
-    if (claimAllHook.skipMessage) return claimAllHook.skipMessage
-
-    if (claimAllHook.currentStep === 'claiming') return 'Claiming'
-    if (claimAllHook.currentStep === 'distributing') return 'Distributing'
-    return 'Withdrawing'
-  }
 
   return (
     <div className="bg-parchment/5 border border-parchment/10 p-2.5">
@@ -152,26 +132,17 @@ export const ATPStakingOverviewDelegationItem = ({
                 </div>
                 <button
                   onClick={() => onClaimClick(delegation)}
-                  disabled={delegation.rewards === 0n || isInBatch || isRewardsClaimable === false}
+                  disabled={delegation.rewards === 0n || isRewardsClaimable === false}
                   className="px-2 py-0.5 border font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-parchment/10 disabled:border-parchment/30 disabled:text-parchment/60 border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90"
                   title={
                     isRewardsClaimable === false
                       ? "Rewards are currently locked by the network protocol"
                       : delegation.rewards === 0n
-                      ? "No rewards to claim"
-                      : isInBatch
-                      ? "Processing in batch"
-                      : "Claim delegation rewards"
+                        ? "No rewards to claim"
+                        : "Claim delegation rewards"
                   }
                 >
-                  {isProcessingInBatch ? (
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 border rounded-full border-ink/30 border-t-ink animate-spin"></div>
-                      <span>{getButtonText()}</span>
-                    </div>
-                  ) : (
-                    'Claim'
-                  )}
+                  Claim
                 </button>
                 {isRewardsClaimable === false && (
                   <TooltipIcon

@@ -54,7 +54,7 @@ export function usePendingWithdrawals({ userAddress, atpAddresses = [] }: UsePen
       const recipients = [userAddress, ...addresses];
 
       // Chunked block scanning to avoid RPC limits (~28 days on mainnet)
-      const CHUNK_SIZE = 50000n;
+      const CHUNK_SIZE = 9_000n;
       const MAX_BLOCKS_BACK = 200000n;
       const blockNumber = await publicClient.getBlockNumber();
       const startBlock = blockNumber;

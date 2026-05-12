@@ -7,13 +7,15 @@ interface StatusBadgeProps {
   isLoading: boolean
   isUnstaked: boolean
   isInQueue: boolean
-  slashCount?: number
+  /** Percentage of activation stake that has been slashed. 0 hides the warning. */
+  lossPercentage?: number
   isAtRisk?: boolean
 }
 
 /**
- * Reusable status badge component for displaying stake/delegation status
- * Shows a warning indicator when the sequencer has been slashed
+ * Reusable status badge component for displaying stake/delegation status.
+ * Shows a warning indicator + slashed-percentage when the validator has lost
+ * stake (no hardcoded per-slash amount; we report cumulative loss).
  */
 export const StatusBadge = ({
   status,
@@ -21,7 +23,7 @@ export const StatusBadge = ({
   isLoading,
   isUnstaked,
   isInQueue,
-  slashCount = 0,
+  lossPercentage = 0,
   isAtRisk = false,
 }: StatusBadgeProps) => {
   const getBadgeClasses = () => {
@@ -49,8 +51,8 @@ export const StatusBadge = ({
     return statusLabel
   }
 
-  // Show slash warning only for validating sequencers that have been slashed
-  const showSlashWarning = slashCount > 0 && status === SequencerStatus.VALIDATING
+  // Show slash warning only for validating sequencers that have lost stake.
+  const showSlashWarning = lossPercentage > 0 && status === SequencerStatus.VALIDATING
 
   return (
     <div className={`flex items-center gap-1 px-2 py-0.5 border rounded-sm ${getBadgeClasses()}`}>
@@ -66,7 +68,7 @@ export const StatusBadge = ({
       </span>
       {showSlashWarning && (
         <span className={`text-xs font-mono ${isAtRisk ? 'text-vermillion' : 'text-yellow-500'}`}>
-          ({slashCount})
+          (−{lossPercentage.toFixed(2)}%)
         </span>
       )}
     </div>

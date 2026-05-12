@@ -3,7 +3,6 @@ import { createPortal } from "react-dom"
 import { Icon } from "@/components/Icon"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { formatTokenAmount } from "@/utils/atpFormatters"
-import { ClaimAllProvider } from "@/contexts/ClaimAllContext"
 import { ClaimAllDelegationRewardsButton } from "@/components/ClaimAllDelegationRewardsButton"
 import { ClaimDelegationRewardsModal, type DelegationModalData } from "@/components/ClaimDelegationRewardsModal"
 import { WalletDelegationItem } from "./WalletDelegationItem"
@@ -73,7 +72,7 @@ export const WalletStakesDetailsModal = ({
   }
 
   return createPortal(
-    <ClaimAllProvider>
+    <>
       <div
         className="fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4 pt-16"
         onClick={handleBackdropClick}
@@ -169,7 +168,10 @@ export const WalletStakesDetailsModal = ({
                         splitContract: d.splitContract,
                         providerTakeRate: d.providerTakeRate,
                         providerRewardsRecipient: d.providerRewardsRecipient,
-                        rewards: d.rewards
+                        rewards: d.rewards,
+                        rollupRewardsByRollup: d.rollupRewardsByRollup,
+                        providerName: d.providerName,
+                        providerId: d.providerId,
                       }))}
                     onSuccess={onWithdrawSuccess}
                   />
@@ -219,7 +221,7 @@ export const WalletStakesDetailsModal = ({
           }}
         />
       )}
-    </ClaimAllProvider>,
+    </>,
     document.body
   )
 }

@@ -11,7 +11,6 @@ import { ATPStakingOverviewTotalStaked } from "./ATPStakingOverviewTotalStaked"
 import { ATPStakingOverviewStakeableAmount } from "./ATPStakingOverviewStakeableAmount"
 import { ATPStakingOverviewClaimableRewards } from "./ATPStakingOverviewClaimableRewards"
 import { ATPStakingOverviewBreakdownSection } from "./ATPStakingOverviewBreakdownSection"
-import { ClaimAllProvider } from "@/contexts/ClaimAllContext"
 import type { ATPData } from "@/hooks/atp"
 import type { Address } from "viem"
 import { calculateStakeableAmount } from "@/hooks/atp/useStakeableAmount"
@@ -131,8 +130,7 @@ export const ATPStakingOverview = ({ atpData, walletBalance = 0n }: ATPStakingOv
   }
 
   return (
-    <ClaimAllProvider>
-      <div className="relative bg-parchment/5 border border-parchment/20 p-8">
+    <div className="relative bg-parchment/5 border border-parchment/20 p-8">
         {/* Total Allocation, Staked, Stakeable, and Rewards Row */}
         <div>
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
@@ -216,7 +214,6 @@ export const ATPStakingOverview = ({ atpData, walletBalance = 0n }: ATPStakingOv
             onClose={() => setSelectedATP(null)}
           />
         )}
-      </div>
-    </ClaimAllProvider>
+    </div>
   )
 }

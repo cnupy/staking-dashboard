@@ -4,6 +4,14 @@ export interface StakeWithProviderReward {
   totalRewards: bigint
   userRewards: bigint
   takeRate: number
+  /** Per-rollup `getSequencerRewards(splitContract)` breakdown — one row per
+   *  rollup version the Registry has indexed. Drives the per-rollup claim
+   *  fan-out at execution time. */
+  rollupRewardsByRollup: Array<{
+    rollupAddress: `0x${string}`
+    rollupVersion: string
+    rewards: bigint
+  }>
 }
 
 export interface G1Point {

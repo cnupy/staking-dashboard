@@ -19,7 +19,7 @@ export const TermsAcceptanceModal = ({ isOpen, onAccept, onClose }: TermsAccepta
   if (!isOpen) return null
 
   return createPortal(
-    <div className="fixed inset-0 backdrop-blur-sm bg-ink/50 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 backdrop-blur-sm bg-ink/50 z-[300] flex items-center justify-center p-4">
       <div className="bg-ink/95 border border-ink/20 backdrop-blur-sm max-w-4xl w-full max-h-[80vh] flex flex-col relative shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-parchment/10">

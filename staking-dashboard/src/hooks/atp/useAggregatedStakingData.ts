@@ -7,7 +7,7 @@ import { SplitAbi } from '@/contracts/abis/Split'
 import { SplitWarehouseAbi } from '@/contracts/abis/SplitWarehouse'
 import { calculateTotalUserShareFromSplitRewards } from '@/utils/rewardCalculations'
 import { useStakingAssetTokenDetails } from '@/hooks/stakingRegistry'
-import { contracts } from '@/contracts'
+import { contracts, getRollupVersions, type RollupVersion } from '@/contracts'
 import type { Address } from 'viem'
 import { stringToBigInt } from '@/utils/atpFormatters'
 import type { StakeStatus } from './atpTypes'
@@ -55,6 +55,9 @@ export interface DelegationBreakdown {
   txHash: string
   timestamp: number
   blockNumber: number
+  /** Per-rollup unclaimed `getSequencerRewards(splitContract)` balances. Used by the
+   *  claim engine to pre-sweep stranded balances from non-canonical rollups. */
+  rollupRewardsByRollup: Array<{ rollupAddress: Address; rollupVersion: string; rewards: bigint }>
 }
 
 export interface Erc20DelegationBreakdown {
@@ -75,6 +78,9 @@ export interface Erc20DelegationBreakdown {
   txHash: string
   timestamp: number
   blockNumber: number
+  /** Per-rollup unclaimed `getSequencerRewards(splitContract)` balances. Used by the
+   *  claim engine to pre-sweep stranded balances from non-canonical rollups. */
+  rollupRewardsByRollup: Array<{ rollupAddress: Address; rollupVersion: string; rewards: bigint }>
 }
 
 export interface Erc20DirectStakeBreakdown {
@@ -233,18 +239,37 @@ function parseDirectStake(stake: ApiDirectStake): DirectStakeBreakdown {
 }
 
 /**
- * Create contract calls for a delegation (rollup rewards + split balance)
+ * Ordered list of rollups (oldest first, 1-based ordinal version). Falls back to
+ * the configured rollup when `/api/rollups` hasn't populated the module cache yet.
  */
-function createDelegationContracts(delegation: ApiDelegation, tokenAddress: Address) {
+function resolveRollupList(): Array<{ address: Address; version: string }> {
+  const versions = getRollupVersions()
+  if (versions.length > 0) {
+    return versions.map((v: RollupVersion, i) => ({ address: v.address, version: String(i + 1) }))
+  }
+  return [{ address: contracts.rollup.address, version: '1' }]
+}
+
+/**
+ * Create contract calls for a delegation. Emits N `getSequencerRewards` calls
+ * (one per rollup) plus one ERC20 `balanceOf` for the split contract — total
+ * N+1 calls per delegation. Callers index into the result array with the same
+ * N+1 stride; see the parse loops below.
+ */
+function createDelegationContracts(
+  delegation: ApiDelegation,
+  tokenAddress: Address,
+  rollups: Array<{ address: Address; version: string }>,
+) {
   if (!delegation.splitContract) return []
 
   return [
-    {
-      address: contracts.rollup.address,
+    ...rollups.map((rollup) => ({
+      address: rollup.address,
       abi: contracts.rollup.abi,
       functionName: 'getSequencerRewards',
       args: [delegation.splitContract as Address],
-    },
+    })),
     {
       address: tokenAddress,
       abi: ERC20Abi,
@@ -259,12 +284,18 @@ function createDelegationContracts(delegation: ApiDelegation, tokenAddress: Addr
  */
 function parseDelegation(
   delegation: ApiDelegation,
-  rollupBalance: bigint,
+  rollupBalancesByRollup: Array<{ rollupAddress: Address; rollupVersion: string; rewards: bigint }>,
   splitContractBalance: bigint
 ): DelegationBreakdown {
+  // Sum unclaimed rollup balance across every rollup version.
+  const rollupBalanceTotal = rollupBalancesByRollup.reduce(
+    (sum, r) => sum + r.rewards,
+    0n,
+  )
+
   // Calculate total user share from rollup and split contract only (omit warehouse)
   const userRewards = calculateTotalUserShareFromSplitRewards(
-    rollupBalance,
+    rollupBalanceTotal,
     splitContractBalance,
     0n, // Omit warehouse balance
     delegation.providerTakeRate
@@ -289,22 +320,28 @@ function parseDelegation(
     txHash: delegation.txHash,
     timestamp: delegation.timestamp,
     blockNumber: delegation.blockNumber,
+    rollupRewardsByRollup: rollupBalancesByRollup,
   }
 }
 
 /**
- * Create contract calls for an ERC20 delegation (rollup rewards + split balance)
+ * Create contract calls for an ERC20 delegation. Same N+1 stride as
+ * {@link createDelegationContracts}.
  */
-function createErc20DelegationContracts(delegation: ApiErc20Delegation, tokenAddress: Address) {
+function createErc20DelegationContracts(
+  delegation: ApiErc20Delegation,
+  tokenAddress: Address,
+  rollups: Array<{ address: Address; version: string }>,
+) {
   if (!delegation.splitContract) return []
 
   return [
-    {
-      address: contracts.rollup.address,
+    ...rollups.map((rollup) => ({
+      address: rollup.address,
       abi: contracts.rollup.abi,
       functionName: 'getSequencerRewards',
       args: [delegation.splitContract as Address],
-    },
+    })),
     {
       address: tokenAddress,
       abi: ERC20Abi,
@@ -319,11 +356,16 @@ function createErc20DelegationContracts(delegation: ApiErc20Delegation, tokenAdd
  */
 function parseErc20Delegation(
   delegation: ApiErc20Delegation,
-  rollupBalance: bigint,
+  rollupBalancesByRollup: Array<{ rollupAddress: Address; rollupVersion: string; rewards: bigint }>,
   splitContractBalance: bigint
 ): Erc20DelegationBreakdown {
+  const rollupBalanceTotal = rollupBalancesByRollup.reduce(
+    (sum, r) => sum + r.rewards,
+    0n,
+  )
+
   const userRewards = calculateTotalUserShareFromSplitRewards(
-    rollupBalance,
+    rollupBalanceTotal,
     splitContractBalance,
     0n,
     delegation.providerTakeRate
@@ -347,6 +389,7 @@ function parseErc20Delegation(
     txHash: delegation.txHash,
     timestamp: delegation.timestamp,
     blockNumber: delegation.blockNumber,
+    rollupRewardsByRollup: rollupBalancesByRollup,
   }
 }
 
@@ -396,12 +439,14 @@ export const useAggregatedStakingData = (): AggregatedStakingData => {
   const erc20Delegations = (stakingData?.erc20DelegationBreakdown ?? []).filter(delegation => delegation.splitContract)
   const erc20DirectStakes = stakingData?.erc20DirectStakeBreakdown ?? []
 
-  // Build contract calls for rollup balance + split contract balance (2 calls per delegation)
-  // Combine ATP and ERC20 delegation contracts
+  // Build contract calls: N getSequencerRewards calls (one per rollup) + 1 balanceOf per delegation.
+  // The resulting array has stride N+1 per delegation; parse loops below mirror this layout.
+  const rollups = useMemo(() => resolveRollupList(), [])
+  const callsPerDelegation = rollups.length + 1
   const delegationContracts = tokenAddress
     ? [
-        ...delegations.flatMap(delegation => createDelegationContracts(delegation, tokenAddress)),
-        ...erc20Delegations.flatMap(delegation => createErc20DelegationContracts(delegation, tokenAddress))
+        ...delegations.flatMap(delegation => createDelegationContracts(delegation, tokenAddress, rollups)),
+        ...erc20Delegations.flatMap(delegation => createErc20DelegationContracts(delegation, tokenAddress, rollups))
       ]
     : []
 
@@ -440,22 +485,32 @@ export const useAggregatedStakingData = (): AggregatedStakingData => {
 
   const isLoading = isLoadingApi || ((delegations.length > 0 || erc20Delegations.length > 0) && isLoadingDelegations) || isLoadingWarehouse
 
+  // Extract per-rollup balances + split-contract balance from a delegation's
+  // call-stride starting at `baseIndex`.
+  const extractBalances = (baseIndex: number) => {
+    const rollupBalancesByRollup = rollups.map((rollup, rIdx) => {
+      const result = delegationData?.[baseIndex + rIdx]
+      const rewards = (result?.result as bigint | undefined) ?? 0n
+      return { rollupAddress: rollup.address, rollupVersion: rollup.version, rewards }
+    })
+    const splitContractBalance =
+      (delegationData?.[baseIndex + rollups.length]?.result as bigint | undefined) ?? 0n
+    return { rollupBalancesByRollup, splitContractBalance }
+  }
+
   // Parse ATP delegations with rewards from rollup and split contract
   const delegationBreakdown: DelegationBreakdown[] = delegations.map((delegation, index) => {
-    const rollupBalance = (delegationData?.[index * 2]?.result as bigint) ?? 0n
-    const splitContractBalance = (delegationData?.[index * 2 + 1]?.result as bigint) ?? 0n
-
-    return parseDelegation(delegation, rollupBalance, splitContractBalance)
+    const { rollupBalancesByRollup, splitContractBalance } = extractBalances(index * callsPerDelegation)
+    return parseDelegation(delegation, rollupBalancesByRollup, splitContractBalance)
   })
 
   // Parse ERC20 delegations with rewards (offset by ATP delegation count)
-  const atpDelegationContractCount = delegations.length * 2
+  const atpDelegationContractCount = delegations.length * callsPerDelegation
   const erc20DelegationBreakdown: Erc20DelegationBreakdown[] = erc20Delegations.map((delegation, index) => {
-    const dataIndex = atpDelegationContractCount + (index * 2)
-    const rollupBalance = (delegationData?.[dataIndex]?.result as bigint) ?? 0n
-    const splitContractBalance = (delegationData?.[dataIndex + 1]?.result as bigint) ?? 0n
-
-    return parseErc20Delegation(delegation, rollupBalance, splitContractBalance)
+    const { rollupBalancesByRollup, splitContractBalance } = extractBalances(
+      atpDelegationContractCount + index * callsPerDelegation,
+    )
+    return parseErc20Delegation(delegation, rollupBalancesByRollup, splitContractBalance)
   })
 
   // Parse direct stakes

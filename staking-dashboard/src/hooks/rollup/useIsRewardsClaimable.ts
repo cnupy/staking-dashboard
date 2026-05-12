@@ -1,13 +1,17 @@
 import { useReadContract } from "wagmi"
+import type { Address } from "viem"
 import { contracts } from "@/contracts"
 
 /**
- * Hook to check if rewards are claimable from the rollup contract
+ * Hook to check if rewards are claimable from a specific rollup contract.
+ *
+ * @param rollupAddress - Optional rollup contract to query. Defaults to the configured rollup.
  */
-export function useIsRewardsClaimable() {
+export function useIsRewardsClaimable(rollupAddress?: Address) {
+  const targetRollup = rollupAddress ?? contracts.rollup.address
   const query = useReadContract({
     abi: contracts.rollup.abi,
-    address: contracts.rollup.address,
+    address: targetRollup,
     functionName: "isRewardsClaimable"
   })
 

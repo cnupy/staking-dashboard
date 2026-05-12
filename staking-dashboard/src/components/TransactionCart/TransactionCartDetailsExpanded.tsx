@@ -1,4 +1,5 @@
 import type { CartTransaction } from "@/contexts/TransactionCartContext"
+import { ClaimStepTypeName } from "@/contexts/TransactionCartContext"
 import { CopyButton } from "@/components/CopyButton/CopyButton"
 import { Icon } from "@/components/Icon"
 import { openTxInExplorer } from "@/utils/explorerUtils"
@@ -129,6 +130,61 @@ export const TransactionCartDetailsExpanded = ({ transaction }: TransactionCartD
                 {transaction.metadata.amount && (
                   <div>
                     <div className="text-[10px] text-parchment/50 mb-1">Amount</div>
+                    <code className="text-[10px] font-mono text-parchment">
+                      {transaction.metadata.amount.toString()}
+                    </code>
+                  </div>
+                )}
+              </>
+            )}
+            {transaction.type === "claim" && (
+              <>
+                {transaction.metadata.stepType && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Step</div>
+                    <code className="text-[10px] font-mono text-parchment">
+                      {ClaimStepTypeName[transaction.metadata.stepType]}
+                    </code>
+                  </div>
+                )}
+                {transaction.metadata.coinbase && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Coinbase Address</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono text-chartreuse break-all">
+                        {transaction.metadata.coinbase}
+                      </code>
+                      <CopyButton text={transaction.metadata.coinbase} size="sm" />
+                    </div>
+                  </div>
+                )}
+                {transaction.metadata.splitContract && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Split Contract</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono text-chartreuse break-all">
+                        {transaction.metadata.splitContract}
+                      </code>
+                      <CopyButton text={transaction.metadata.splitContract} size="sm" />
+                    </div>
+                  </div>
+                )}
+                {transaction.metadata.rollupAddress && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">
+                      Rollup{transaction.metadata.rollupVersion ? ` v${transaction.metadata.rollupVersion}` : ""}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono text-chartreuse break-all">
+                        {transaction.metadata.rollupAddress}
+                      </code>
+                      <CopyButton text={transaction.metadata.rollupAddress} size="sm" />
+                    </div>
+                  </div>
+                )}
+                {transaction.metadata.amount !== undefined && transaction.metadata.amount > 0n && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Expected Amount</div>
                     <code className="text-[10px] font-mono text-parchment">
                       {transaction.metadata.amount.toString()}
                     </code>

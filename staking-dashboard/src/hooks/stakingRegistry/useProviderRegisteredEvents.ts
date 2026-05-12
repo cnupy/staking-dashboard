@@ -30,7 +30,7 @@ export function useProviderRegisteredEvents() {
     try {
       const blockNumber = await client.getBlockNumber();
 
-      const CHUNK_SIZE = 50000n;
+      const CHUNK_SIZE = 9_000n;
       const MAX_BLOCKS_BACK = 200000n;
       const startBlock = blockNumber;
       const endBlock =

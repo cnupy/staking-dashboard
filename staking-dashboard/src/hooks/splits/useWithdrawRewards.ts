@@ -1,6 +1,26 @@
 import { useWriteContract, useWaitForTransactionReceipt } from "@/hooks/useWagmiStrategy"
-import { type Address } from "viem"
+import { encodeFunctionData, type Address } from "viem"
 import { SplitsWarehouseAbi } from "@/contracts/abis/SplitsWarehouse"
+import type { RawTransaction } from "@/contexts/TransactionCartContextType"
+
+/**
+ * Build a `SplitsWarehouse.withdraw(user, token)` raw transaction.
+ */
+export function buildWithdrawRewardsTx(
+  warehouseAddress: Address,
+  userAddress: Address,
+  tokenAddress: Address,
+): RawTransaction {
+  return {
+    to: warehouseAddress,
+    data: encodeFunctionData({
+      abi: SplitsWarehouseAbi,
+      functionName: "withdraw",
+      args: [userAddress, tokenAddress],
+    }),
+    value: 0n,
+  }
+}
 
 /**
  * Hook to withdraw rewards from SplitsWarehouse after distribute() has been called

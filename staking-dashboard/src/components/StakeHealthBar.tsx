@@ -6,23 +6,33 @@ interface StakeHealthBarProps {
   effectiveBalance: bigint | undefined
   activationThreshold: bigint | undefined
   ejectionThreshold: bigint | undefined
+  /** % of the activation→ejection cushion still intact. Drives bar fill + color. */
   healthPercentage: number
-  slashCount: number
+  /** Cumulative stake lost relative to activation threshold (raw + percentage). */
+  lossAmount: bigint
+  lossPercentage: number
   isAtRisk: boolean
   isCritical: boolean
   isLoading: boolean
 }
 
 /**
- * Visual progress bar showing stake health relative to ejection threshold
- * Green = healthy (>50%), Yellow = at risk (25-50%), Red = critical (<25% or below ejection)
+ * Visual progress bar showing stake health relative to the ejection threshold.
+ * Green = healthy (>50% cushion), Yellow = at risk (25-50%), Red = critical
+ * (<25% or below ejection).
+ *
+ * `healthPercentage` here is the cushion (activation→ejection) remaining —
+ * it's what the user actually wants to know ("am I close to being ejected?").
+ * Cumulative slashed amount is shown as a separate headline so a small slash
+ * that eats a big chunk of cushion isn't misread as catastrophic loss.
  */
 export const StakeHealthBar = ({
   effectiveBalance,
   activationThreshold,
   ejectionThreshold,
   healthPercentage,
-  slashCount,
+  lossAmount,
+  lossPercentage,
   isAtRisk,
   isCritical,
   isLoading,
@@ -49,28 +59,29 @@ export const StakeHealthBar = ({
     return 'text-chartreuse'
   }
 
+  const hasLoss = lossAmount > 0n
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1">
           <span className="text-xs text-parchment/60 uppercase tracking-wide">Stake Health</span>
           <TooltipIcon
-            content={`Your effective balance determines validator health. Each slash reduces balance by 2,000 ${symbol || 'tokens'}. Below ejection threshold forces exit.`}
+            content="The bar shows how much of the cushion between your activation balance and the ejection threshold is still intact — falling below 0 forces an exit. The slashed line shows your cumulative stake loss."
             size="sm"
             maxWidth="max-w-xs"
           />
         </div>
-        <div className="flex items-center gap-2">
-          {slashCount > 0 && (
-            <span className={`text-xs font-mono ${getTextColor()}`}>
-              {slashCount} slash{slashCount !== 1 ? 'es' : ''}
-            </span>
-          )}
-          <span className={`text-xs font-mono font-bold ${getTextColor()}`}>
-            {healthPercentage.toFixed(0)}%
-          </span>
-        </div>
+        <span className={`text-xs font-mono font-bold ${getTextColor()}`}>
+          {healthPercentage.toFixed(0)}% cushion
+        </span>
       </div>
+
+      {hasLoss && (
+        <div className={`text-xs font-mono ${getTextColor()}`}>
+          Slashed: {formatTokenAmount(lossAmount, decimals, symbol)} ({lossPercentage.toFixed(2)}% of stake)
+        </div>
+      )}
 
       <div className="relative w-full h-2 bg-parchment/10 rounded-full overflow-hidden">
         <div

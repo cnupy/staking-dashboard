@@ -19,7 +19,6 @@ import { ATPDetailsDelegationItem } from "./ATPDetailsDelegationItem"
 import { ATPDetailsLoadingState } from "./ATPDetailsLoadingState"
 import { ATPDetailsErrorState } from "./ATPDetailsErrorState"
 import { VestingGraph } from "@/components/VestingSchedule"
-import { ClaimAllProvider } from "@/contexts/ClaimAllContext"
 import { ClaimAllDelegationRewardsButton } from "@/components/ClaimAllDelegationRewardsButton"
 import { ClaimDelegationRewardsModal, type DelegationModalData } from "@/components/ClaimDelegationRewardsModal"
 import type { ATPData } from "@/hooks/atp"
@@ -272,7 +271,7 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
   const milestoneId = isMATPData(atp) ? atp.milestoneId : undefined;
 
   return createPortal(
-    <ClaimAllProvider>
+    <>
       <div
         className="fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4 pt-16"
         onClick={handleBackdropClick}
@@ -434,7 +433,10 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                         splitContract: d.splitContract as Address,
                         providerTakeRate: d.providerTakeRate,
                         providerRewardsRecipient: d.providerRewardsRecipient as Address,
-                        rewards: rewards?.userRewards ?? 0n
+                        rewards: rewards?.userRewards ?? 0n,
+                        rollupRewardsByRollup: rewards?.rollupRewardsByRollup,
+                        providerName: d.providerName,
+                        providerId: d.providerId,
                       }
                     })}
                   onSuccess={refetchDelegationRewards}
@@ -463,7 +465,8 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                           splitContract: delegation.splitContract,
                           totalRewards: 0n,
                           userRewards: 0n,
-                          takeRate: delegation.providerTakeRate
+                          takeRate: delegation.providerTakeRate,
+                          rollupRewardsByRollup: [],
                         }}
                         isLoadingDelegationRewards={isLoadingDelegationRewards && !delegation.hasFailedDeposit}
                         stakerAddress={stakerAddress}
@@ -509,7 +512,7 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
           }}
         />
       )}
-    </ClaimAllProvider>,
+    </>,
     document.body
   )
 }

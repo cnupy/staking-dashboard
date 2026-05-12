@@ -12,12 +12,14 @@ import type {
   DelegationMetadata,
   SelfStakeMetadata,
   WalletDirectStakeMetadata,
+  ClaimMetadata,
   RawTransaction,
   TransactionStatus,
   CartTransaction,
   AddTransactionOptions,
   TransactionCartContextType
 } from "./TransactionCartContextType"
+import { ClaimStepType, ClaimStepTypeName } from "./TransactionCartContextType"
 
 // Re-export types for backwards compatibility
 export type {
@@ -25,11 +27,14 @@ export type {
   DelegationMetadata,
   SelfStakeMetadata,
   WalletDirectStakeMetadata,
+  ClaimMetadata,
   RawTransaction,
   TransactionStatus,
   CartTransaction,
   AddTransactionOptions
 }
+
+export { ClaimStepType, ClaimStepTypeName }
 
 const TransactionCartContext = createContext<TransactionCartContextType | undefined>(undefined)
 
@@ -174,6 +179,50 @@ export function TransactionCartProvider({ children }: TransactionCartProviderPro
     }
   }, [hasDependents, showAlert])
 
+  const replaceTransactionByTx = useCallback((
+    rawTx: RawTransaction,
+    replacement: Omit<CartTransaction, "id">,
+  ) => {
+    let missingDepsMessage: string | null = null
+
+    setTransactions(prev => {
+      const signature = getTransactionSignature(rawTx)
+      const filtered = prev.filter(tx => getTransactionSignature(tx.transaction) !== signature)
+      const tempId = `${replacement.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      const tempTransaction = { ...replacement, id: tempId, status: 'pending' as const } as CartTransaction
+
+      // Mirror addTransaction's dependency-presence check. If the replacement
+      // declares deps that don't exist post-filter, fail closed (revert to
+      // prev) so we never end up with a dangling entry. Capture a warning so
+      // the caller / developer isn't left with a silent no-op.
+      const metadata = replacement.metadata
+      if (metadata && 'dependsOn' in metadata && metadata.dependsOn && metadata.dependsOn.length > 0) {
+        const dependencies = resolveDependencies(tempTransaction, filtered)
+        if (dependencies.length !== metadata.dependsOn.length) {
+          const foundStepTypes = new Set(
+            dependencies.map(dep => dep.metadata && 'stepType' in dep.metadata ? dep.metadata.stepType : null),
+          )
+          const missing = metadata.dependsOn
+            .filter(dep => !foundStepTypes.has(dep.stepType))
+            .map(dep => dep.stepName || String(dep.stepType))
+            .join(", ")
+          missingDepsMessage =
+            `replaceTransactionByTx: skipped "${replacement.label}" — missing upstream dependencies (${missing})`
+          return prev
+        }
+      }
+
+      return [...filtered, tempTransaction]
+    })
+
+    if (missingDepsMessage) {
+      // Surfacing as a console.warn rather than a user-facing alert: this is
+      // a programming error (cart-wiring drift), not a recoverable runtime
+      // condition the user can act on.
+      console.warn(missingDepsMessage)
+    }
+  }, [resolveDependencies])
+
   const clearCart = useCallback(() => {
     setTransactions([])
   }, [])
@@ -265,6 +314,7 @@ export function TransactionCartProvider({ children }: TransactionCartProviderPro
         transactions,
         addTransaction,
         removeTransaction,
+        replaceTransactionByTx,
         clearCart,
         clearByType,
         clearCompleted,

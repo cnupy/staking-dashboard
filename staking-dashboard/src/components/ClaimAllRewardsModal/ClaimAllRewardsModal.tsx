@@ -1,16 +1,20 @@
-import { useState, useEffect } from "react"
 import { createPortal } from "react-dom"
+import { useAccount } from "wagmi"
 import { Icon } from "@/components/Icon"
-import { useClaimAllRewards } from "@/hooks/rewards"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
+import { useSplitsWarehouse } from "@/hooks/splits/useSplitsWarehouse"
 import { ClaimAllRewardsSummary } from "./ClaimAllRewardsSummary"
-import { ClaimAllRewardsProgress } from "./ClaimAllRewardsProgress"
-import { ClaimAllRewardsSuccess } from "./ClaimAllRewardsSuccess"
+import { useTransactionCart } from "@/contexts/TransactionCartContext"
+import { useAlert } from "@/contexts/AlertContext"
+import {
+  buildDelegationClaimEntries,
+  buildCoinbaseClaimEntry,
+  buildWarehouseWithdrawEntry,
+  type ClaimCartEntry,
+} from "@/utils/claimCart"
 import type { DelegationBreakdown } from "@/hooks/atp/useAggregatedStakingData"
 import type { CoinbaseBreakdown } from "@/hooks/rewards/rewardsTypes"
-
-type ModalPhase = 'summary' | 'progress' | 'success'
 
 interface ClaimAllRewardsModalProps {
   isOpen: boolean
@@ -22,8 +26,11 @@ interface ClaimAllRewardsModalProps {
 }
 
 /**
- * Modal for claiming all rewards in a unified flow
- * Handles both delegation rewards (3-step) and self-stake rewards (1-step)
+ * Fans every claim leg (delegation per-rollup claims/distribute, coinbase
+ * claims, and a single warehouse withdraw at the end) into the transaction
+ * cart with `dependsOn` wiring, then opens the cart. Routes through the
+ * shared `claimCart` helpers so this matches the per-delegation and bulk
+ * delegation entry points entry-for-entry.
  */
 export const ClaimAllRewardsModal = ({
   isOpen,
@@ -31,73 +38,99 @@ export const ClaimAllRewardsModal = ({
   delegations,
   coinbases,
   pendingWarehouseWithdrawal = 0n,
-  onSuccess
+  onSuccess,
 }: ClaimAllRewardsModalProps) => {
-  const [phase, setPhase] = useState<ModalPhase>('summary')
-
-  // Token details
-  const { symbol, decimals } = useStakingAssetTokenDetails()
-
-  // Check if rewards are claimable
+  const { address: beneficiary } = useAccount()
+  const { symbol, decimals, stakingAssetAddress: tokenAddress } = useStakingAssetTokenDetails()
   const { isRewardsClaimable } = useIsRewardsClaimable()
+  const { addTransaction, openCart, replaceTransactionByTx } = useTransactionCart()
+  const { showAlert } = useAlert()
 
-  // Claim hook
-  const claimAllRewards = useClaimAllRewards()
+  // Resolve warehouse via the first delegation's split contract. All splits
+  // funnel into the same SplitsWarehouse for a given token, so any split works.
+  const firstSplit = delegations.find((d) => d.rewards > 0n)?.splitContract ?? delegations[0]?.splitContract
+  const { warehouseAddress } = useSplitsWarehouse(firstSplit)
 
-  // Reset phase when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setPhase('summary')
-      claimAllRewards.reset()
-    }
-  }, [isOpen])
-
-  // Transition to progress when claiming starts
-  useEffect(() => {
-    if (claimAllRewards.isProcessing && phase === 'summary') {
-      setPhase('progress')
-    }
-  }, [claimAllRewards.isProcessing, phase])
-
-  // Transition to success when all done
-  useEffect(() => {
-    if (claimAllRewards.isSuccess && phase === 'progress') {
-      setPhase('success')
-      onSuccess?.()
-    }
-  }, [claimAllRewards.isSuccess, phase, onSuccess])
-
-  const handleClose = () => {
-    if (claimAllRewards.isProcessing) {
-      // Don't allow closing while processing - user must cancel
+  const handleAddAllToBatch = () => {
+    if (!tokenAddress || !beneficiary) {
+      showAlert("error", "Wallet or token address not ready")
       return
     }
-    claimAllRewards.reset()
+
+    const entriesToAdd: ClaimCartEntry[] = []
+    let lastDistributeGroup: string | null = null
+
+    // Per-delegation entries from the shared helper.
+    for (const d of delegations) {
+      const providerLabel = d.providerName ?? `Provider ${d.providerId}`
+      const { entries, distributeGroup } = buildDelegationClaimEntries({
+        splitContract: d.splitContract,
+        providerTakeRate: d.providerTakeRate,
+        providerRewardsRecipient: d.providerRewardsRecipient,
+        providerLabel,
+        rollupRewardsByRollup: d.rollupRewardsByRollup ?? [],
+        beneficiary,
+        tokenAddress,
+        decimals: decimals ?? 18,
+        symbol: symbol ?? "",
+      })
+      entriesToAdd.push(...entries)
+      if (distributeGroup) lastDistributeGroup = distributeGroup
+    }
+
+    // Per-coinbase entries.
+    for (const c of coinbases) {
+      if (c.rewards === 0n) continue
+      entriesToAdd.push(
+        buildCoinbaseClaimEntry({
+          coinbase: c.address,
+          rollupAddress: c.rollupAddress,
+          rollupVersion: c.rollupVersion,
+          rewards: c.rewards,
+          decimals: decimals ?? 18,
+          symbol: symbol ?? "",
+        }),
+      )
+    }
+
+    // Per-delegation + per-coinbase entries have unique calldata; safe to add
+    // with `preventDuplicate`. Subsequent "Add All" clicks won't duplicate
+    // them.
+    for (const entry of entriesToAdd) {
+      addTransaction(entry, { preventDuplicate: true })
+    }
+
+    // The warehouse withdraw's calldata is identical across delegations for
+    // the same user/token. Using `addTransaction` with `preventDuplicate`
+    // would silently drop it on a re-add and leave a stale dependency on a
+    // previous distribute group — stranding any newly-added delegation's
+    // share in the warehouse. Route it through `replaceTransactionByTx` so
+    // the fresh entry (wired to the LATEST distribute group) supersedes any
+    // prior withdraw.
+    const needsWithdraw = lastDistributeGroup !== null || pendingWarehouseWithdrawal > 0n
+    if (needsWithdraw && warehouseAddress) {
+      const withdrawEntry = buildWarehouseWithdrawEntry({
+        warehouseAddress,
+        beneficiary,
+        tokenAddress,
+        dependsOnDistributeGroup: lastDistributeGroup,
+      })
+      replaceTransactionByTx(withdrawEntry.transaction, withdrawEntry)
+    }
+
+    onSuccess?.()
+    openCart()
+    onClose()
+  }
+
+  const handleClose = () => {
     onClose()
   }
 
   const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget && !claimAllRewards.isProcessing) {
+    if (e.target === e.currentTarget) {
       handleClose()
     }
-  }
-
-  const handleStartClaiming = () => {
-    claimAllRewards.startClaiming(delegations, coinbases)
-  }
-
-  const handleCancel = () => {
-    claimAllRewards.cancelClaiming()
-    setPhase('summary')
-  }
-
-  const handleRetry = () => {
-    claimAllRewards.retryFailed()
-  }
-
-  const handleDone = () => {
-    claimAllRewards.reset()
-    onClose()
   }
 
   if (!isOpen) return null
@@ -108,83 +141,41 @@ export const ClaimAllRewardsModal = ({
       onClick={handleBackdropClick}
     >
       <div className="bg-ink border-2 border-chartreuse/40 w-full max-w-lg relative max-h-[calc(100vh-5rem)] overflow-y-auto custom-scrollbar">
-        {/* Close button - only show when not processing */}
-        {!claimAllRewards.isProcessing && (
-          <button
-            onClick={handleClose}
-            className="absolute top-4 right-4 text-parchment/60 hover:text-parchment transition-colors"
-          >
-            <Icon name="x" size="md" />
-          </button>
-        )}
+        <button
+          onClick={handleClose}
+          className="absolute top-4 right-4 text-parchment/60 hover:text-parchment transition-colors"
+        >
+          <Icon name="x" size="md" />
+        </button>
 
         <div className="p-6">
-          {/* Header */}
           <div className="flex items-start gap-4 mb-6">
             <div className="flex-shrink-0 mt-1">
-              <Icon
-                name={phase === 'success' ? 'check' : phase === 'progress' ? 'loader' : 'gift'}
-                size="lg"
-                className={`w-8 h-8 ${
-                  phase === 'success' ? 'text-chartreuse' :
-                  phase === 'progress' ? 'text-chartreuse animate-spin' :
-                  'text-chartreuse'
-                }`}
-              />
+              <Icon name="gift" size="lg" className="text-chartreuse w-8 h-8" />
             </div>
             <div className="flex-1">
               <h2 className="font-arizona-serif text-2xl font-medium text-parchment mb-2">
-                {phase === 'success' ? 'Rewards Claimed' :
-                 phase === 'progress' ? 'Claiming Rewards' :
-                 'Claim All Rewards'}
+                Claim All Rewards
               </h2>
               <p className="text-parchment/80 text-sm leading-relaxed">
-                {phase === 'success' ? 'Your rewards have been successfully claimed.' :
-                 phase === 'progress' ? 'Processing your claims. Please approve each transaction.' :
-                 'Review and claim all your available rewards.'}
+                Review your rewards below, then add them all to the transaction batch. The cart panel handles execution.
               </p>
             </div>
           </div>
 
-          {/* Content */}
-          {phase === 'summary' && (
-            <ClaimAllRewardsSummary
-              delegations={delegations}
-              coinbases={coinbases}
-              pendingWarehouseWithdrawal={pendingWarehouseWithdrawal}
-              decimals={decimals ?? 18}
-              symbol={symbol ?? ""}
-              isRewardsClaimable={isRewardsClaimable ?? false}
-              onStartClaiming={handleStartClaiming}
-              isDisabled={false}
-            />
-          )}
-
-          {phase === 'progress' && (
-            <ClaimAllRewardsProgress
-              tasks={claimAllRewards.tasks}
-              currentTask={claimAllRewards.currentTask}
-              progressPercent={claimAllRewards.progressPercent}
-              decimals={decimals ?? 18}
-              symbol={symbol ?? ""}
-              onCancel={handleCancel}
-              isError={claimAllRewards.isError}
-              error={claimAllRewards.error}
-              onRetry={handleRetry}
-            />
-          )}
-
-          {phase === 'success' && (
-            <ClaimAllRewardsSuccess
-              completedTasks={claimAllRewards.completedTasks}
-              decimals={decimals ?? 18}
-              symbol={symbol ?? ""}
-              onClose={handleDone}
-            />
-          )}
+          <ClaimAllRewardsSummary
+            delegations={delegations}
+            coinbases={coinbases}
+            pendingWarehouseWithdrawal={pendingWarehouseWithdrawal}
+            decimals={decimals ?? 18}
+            symbol={symbol ?? ""}
+            isRewardsClaimable={isRewardsClaimable ?? false}
+            onStartClaiming={handleAddAllToBatch}
+            isDisabled={false}
+          />
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   )
 }

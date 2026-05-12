@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { useAccount } from "wagmi"
 import { createPortal } from "react-dom"
 import { Icon } from "@/components/Icon"
@@ -7,7 +8,7 @@ import { formatTokenAmount } from "@/utils/atpFormatters"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { ClaimDelegationRewardsButton } from "@/components/ClaimDelegationRewardsButton"
 import { useWarehouseBalance } from "@/hooks/splits/useWarehouseBalance"
-import { useSequencerRewards } from "@/hooks/rollup/useSequencerRewards"
+import { useCoinbaseRewardsAcrossRollups } from "@/hooks/rewards/useCoinbaseRewardsAcrossRollups"
 import { useERC20Balance } from "@/hooks/erc20/useERC20Balance"
 import { useSplitsWarehouse } from "@/hooks/splits/useSplitsWarehouse"
 import { calculateTotalUserShareFromSplitRewards, calculateUserShareFromTakeRate } from "@/utils/rewardCalculations"
@@ -43,11 +44,16 @@ export const ClaimDelegationRewardsModal = ({
   // Get warehouse address from split contract
   const { warehouseAddress } = useSplitsWarehouse(delegation.splitContract)
 
-  // Get rewards balance on rollup (step 1 - needs to be claimed to split contract)
+  // Fan out `getSequencerRewards(splitContract)` across every rollup. The sum
+  // drives the user-share calc; each non-zero per-rollup entry becomes its own
+  // `Claim — Rollup v<N>` cart entry when the button below is clicked.
+  const perSplitQuery = useMemo<Address[]>(() => [delegation.splitContract], [delegation.splitContract])
   const {
-    rewards: rollupBalance,
-    isLoading: isLoadingRollup
-  } = useSequencerRewards(delegation.splitContract)
+    allCoinbaseBreakdown: perRollupRows,
+    isLoading: isLoadingRollup,
+  } = useCoinbaseRewardsAcrossRollups(perSplitQuery)
+  const rollupBalance = perRollupRows.reduce((sum, row) => sum + row.rewards, 0n)
+  const claimableRollupCount = perRollupRows.filter(r => r.rewards > 0n).length
 
   // Get rewards balance on split contract (step 2 - needs to be distributed)
   const {
@@ -83,12 +89,12 @@ export const ClaimDelegationRewardsModal = ({
   const providerPercentage = (delegation.providerTakeRate / 100).toFixed(2)
 
   // Calculate user's share from each balance source using shared calculation
-  const userShareFromRollup = calculateUserShareFromTakeRate(rollupBalance || 0n, delegation.providerTakeRate)
+  const userShareFromRollup = calculateUserShareFromTakeRate(rollupBalance, delegation.providerTakeRate)
   const userShareFromSplitContract = calculateUserShareFromTakeRate(splitContractBalance || 0n, delegation.providerTakeRate)
 
   // Calculate total user's share after claim using shared calculation
   const userShare = calculateTotalUserShareFromSplitRewards(
-    rollupBalance || 0n,
+    rollupBalance,
     splitContractBalance || 0n,
     warehouseBalance || 0n,
     delegation.providerTakeRate
@@ -161,38 +167,47 @@ export const ClaimDelegationRewardsModal = ({
             </div>
           </div>
 
-          {/* Claim Flow Explanation */}
-          <div className="bg-chartreuse/10 border border-chartreuse/30 p-4 mb-6">
-            <div className="text-xs font-oracle-standard font-bold text-chartreuse mb-2 uppercase tracking-wide">
-              Three-Step Claim Process
-            </div>
-            <div className="space-y-2 text-xs text-parchment/80">
-              <div className="flex items-center gap-2">
-                <div className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-chartreuse/20 border border-chartreuse flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-chartreuse">1</span>
+          {/* Claim Flow Explanation. One `Claim — Rollup v<N>` entry per rollup with
+              balance, plus a single distribute and one warehouse withdraw shared
+              across the whole batch. */}
+          {(() => {
+            const stepCount = claimableRollupCount + 2
+            let stepNum = 1
+            return (
+              <div className="bg-chartreuse/10 border border-chartreuse/30 p-4 mb-6">
+                <div className="text-xs font-oracle-standard font-bold text-chartreuse mb-2 uppercase tracking-wide">
+                  {stepCount}-Step Claim Process
                 </div>
-                <div>
-                  <span className="font-bold text-parchment">Claim:</span> Claim rewards from rollup to split contract
+                <div className="space-y-2 text-xs text-parchment/80">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-chartreuse/20 border border-chartreuse flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-chartreuse">{stepNum++}</span>
+                    </div>
+                    <div>
+                      <span className="font-bold text-parchment">Claim ({claimableRollupCount}):</span>{' '}
+                      One transaction per rollup with a non-zero balance, moving tokens into the split contract
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-chartreuse/20 border border-chartreuse flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-chartreuse">{stepNum++}</span>
+                    </div>
+                    <div>
+                      <span className="font-bold text-parchment">Distribute:</span> Split rewards between you ({userPercentage}%) and provider ({providerPercentage}%)
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-chartreuse/20 border border-chartreuse flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-chartreuse">{stepNum++}</span>
+                    </div>
+                    <div>
+                      <span className="font-bold text-parchment">Withdraw:</span> Transfer your share to your wallet
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-chartreuse/20 border border-chartreuse flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-chartreuse">2</span>
-                </div>
-                <div>
-                  <span className="font-bold text-parchment">Distribute:</span> Split rewards between you ({userPercentage}%) and provider ({providerPercentage}%)
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-chartreuse/20 border border-chartreuse flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-chartreuse">3</span>
-                </div>
-                <div>
-                  <span className="font-bold text-parchment">Withdraw:</span> Transfer your share to your wallet
-                </div>
-              </div>
-            </div>
-          </div>
+            )
+          })()}
 
           {/* Total You Will Receive */}
           {isLoadingBalances ? (
@@ -300,6 +315,12 @@ export const ClaimDelegationRewardsModal = ({
                 splitContract={delegation.splitContract}
                 providerTakeRate={delegation.providerTakeRate}
                 providerRewardsRecipient={delegation.providerRewardsRecipient}
+                providerName={delegation.providerName}
+                rollupRewardsByRollup={perRollupRows.map(r => ({
+                  rollupAddress: r.rollupAddress,
+                  rollupVersion: r.rollupVersion ?? "?",
+                  rewards: r.rewards,
+                }))}
                 onSuccess={handleSuccess}
                 variant="modal"
               />

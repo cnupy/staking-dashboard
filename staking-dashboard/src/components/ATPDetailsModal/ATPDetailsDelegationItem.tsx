@@ -15,7 +15,6 @@ import { useSequencerStatus, SequencerStatus } from "@/hooks/rollup/useSequencer
 import { useStakeHealth } from "@/hooks/rollup/useStakeHealth"
 import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import { useGovernanceConfig } from "@/hooks/governance"
-import { useClaimAllContext } from "@/contexts/ClaimAllContext"
 import { WithdrawalActions } from "./WithdrawalActions"
 import type { Delegation, StakeWithProviderReward } from "@/hooks"
 
@@ -57,7 +56,6 @@ export const ATPDetailsDelegationItem = ({
   const [isExpanded, setIsExpanded] = useState(false)
   const { symbol, decimals } = useStakingAssetTokenDetails()
   const { date, time } = formatBlockTimestamp(delegation.timestamp)
-  const { getSplitStatus, claimAllHook } = useClaimAllContext()
   const { isRewardsClaimable } = useIsRewardsClaimable()
 
   const delegationRollupAddress = delegation.rollupAddress as Address
@@ -69,31 +67,15 @@ export const ATPDetailsDelegationItem = ({
     activationThreshold,
     ejectionThreshold,
     healthPercentage,
-    slashCount,
+    lossAmount,
+    lossPercentage,
     isAtRisk,
     isCritical,
     isLoading: isLoadingHealth
   } = useStakeHealth(delegation.operatorAddress as Address, delegationRollupAddress)
 
-  const splitStatus = getSplitStatus(delegation.splitContract as Address)
-  const isInBatch = splitStatus !== 'idle'
-  const isProcessingInBatch = splitStatus === 'processing'
-
   const isUnstaked = delegation.status === 'UNSTAKED'
   const isInQueue = status === SequencerStatus.NONE && !delegation.hasFailedDeposit && !isUnstaked
-
-  const getButtonText = () => {
-    if (!isProcessingInBatch) return 'Claim Rewards'
-
-    // Show completed message if available
-    if (claimAllHook.completedMessage) return claimAllHook.completedMessage
-    // Show skip message if available
-    if (claimAllHook.skipMessage) return claimAllHook.skipMessage
-
-    if (claimAllHook.currentStep === 'claiming') return 'Claiming'
-    if (claimAllHook.currentStep === 'distributing') return 'Distributing'
-    return 'Withdrawing'
-  }
 
   return (
     <div className="bg-parchment/5 border border-parchment/20 hover:border-chartreuse/40 transition-all">
@@ -137,7 +119,7 @@ export const ATPDetailsDelegationItem = ({
                   isLoading={isLoadingStatus}
                   isUnstaked={isUnstaked}
                   isInQueue={isInQueue}
-                  slashCount={slashCount}
+                  lossPercentage={lossPercentage}
                   isAtRisk={isAtRisk}
                 />
               )}
@@ -419,7 +401,8 @@ export const ATPDetailsDelegationItem = ({
                       activationThreshold={activationThreshold}
                       ejectionThreshold={ejectionThreshold}
                       healthPercentage={healthPercentage}
-                      slashCount={slashCount}
+                      lossAmount={lossAmount}
+                      lossPercentage={lossPercentage}
                       isAtRisk={isAtRisk}
                       isCritical={isCritical}
                       isLoading={isLoadingHealth}
@@ -446,26 +429,17 @@ export const ATPDetailsDelegationItem = ({
                           providerTakeRate: delegation.providerTakeRate,
                           providerRewardsRecipient: delegation.providerRewardsRecipient
                         })}
-                        disabled={delegationRewards.userRewards === 0n || isInBatch || isRewardsClaimable === false}
+                        disabled={delegationRewards.userRewards === 0n || isRewardsClaimable === false}
                         className="px-3 py-1.5 border font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-parchment/10 disabled:border-parchment/30 disabled:text-parchment/60 border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90"
                         title={
                           isRewardsClaimable === false
                             ? "Rewards are currently locked by the network protocol"
                             : delegationRewards.userRewards === 0n
                               ? "No rewards to claim"
-                              : isInBatch
-                                ? "Processing in batch"
-                                : "Claim delegation rewards"
+                              : "Claim delegation rewards"
                         }
                       >
-                        {isProcessingInBatch ? (
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-3 h-3 border rounded-full border-ink/30 border-t-ink animate-spin"></div>
-                            <span>{getButtonText()}</span>
-                          </div>
-                        ) : (
-                          'Claim Rewards'
-                        )}
+                        Claim Rewards
                       </button>
                       {(delegationRewards.userRewards === 0n || isRewardsClaimable === false) && (
                         <TooltipIcon

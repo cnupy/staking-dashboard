@@ -20,7 +20,7 @@ export function useATPCreatedEvents(beneficiaryAddress?: Address) {
 
       // We are scanning for ATPCreated events up until 200000 blocks in history.
       // TODO: This is just for debugging. We will have use some event indexing service in production
-      const CHUNK_SIZE = 50000n;
+      const CHUNK_SIZE = 9_000n;
       const MAX_BLOCKS_BACK = 200000n;
       const startBlock = blockNumber;
       const endBlock =

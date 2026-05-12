@@ -1,8 +1,35 @@
 import { useWriteContract, useWaitForTransactionReceipt } from "@/hooks/useWagmiStrategy"
 import { useAccount } from "wagmi"
-import { type Address } from "viem"
+import { encodeFunctionData, type Address } from "viem"
 import { SplitAbi } from "@/contracts/abis/Split"
 import type { SplitData } from "./types"
+import type { RawTransaction } from "@/contexts/TransactionCartContextType"
+
+/**
+ * Build a `Split.distribute(splitData, token, distributor)` raw transaction.
+ */
+export function buildDistributeRewardsTx(
+  splitContractAddress: Address,
+  splitData: SplitData,
+  tokenAddress: Address,
+  distributorAddress: Address,
+): RawTransaction {
+  const tuple = {
+    recipients: splitData.recipients,
+    allocations: splitData.allocations,
+    totalAllocation: splitData.totalAllocation,
+    distributionIncentive: splitData.distributionIncentive,
+  }
+  return {
+    to: splitContractAddress,
+    data: encodeFunctionData({
+      abi: SplitAbi,
+      functionName: "distribute",
+      args: [tuple, tokenAddress, distributorAddress],
+    }),
+    value: 0n,
+  }
+}
 
 /**
  * Hook to distribute rewards from Split contract

@@ -1,8 +1,9 @@
+import { useMemo } from "react"
 import { Icon } from "@/components/Icon"
 import { CopyButton } from "@/components/CopyButton"
 import { formatTokenAmountFull } from "@/utils/atpFormatters"
 import { useRemoveManualSplit } from "@/hooks/rewards"
-import { useSequencerRewards } from "@/hooks/rollup/useSequencerRewards"
+import { useCoinbaseRewardsAcrossRollups } from "@/hooks/rewards/useCoinbaseRewardsAcrossRollups"
 import { useERC20Balance } from "@/hooks/erc20/useERC20Balance"
 import { calculateUserShareFromTakeRate } from "@/utils/rewardCalculations"
 import type { SplitContractWithSource } from "./types"
@@ -29,13 +30,16 @@ const SplitContractItem = ({
 }: SplitContractItemProps) => {
   const { address: splitAddress, source, providerName, providerTakeRate } = splitContract
 
-  // Fetch rewards for this split contract
-  const { rewards: rollupBalance, isLoading: isLoadingRollup } = useSequencerRewards(splitAddress)
+  // Fan out `getSequencerRewards(splitAddress)` across every rollup so stranded
+  // balances on non-canonical rollups are counted in the displayed total.
+  const perSplitQuery = useMemo<Address[]>(() => [splitAddress], [splitAddress])
+  const { allCoinbaseBreakdown, isLoading: isLoadingRollup } = useCoinbaseRewardsAcrossRollups(perSplitQuery)
+  const rollupBalance = allCoinbaseBreakdown.reduce((sum, row) => sum + row.rewards, 0n)
   const { balance: splitContractBalance, isLoading: isLoadingSplitContract } = useERC20Balance(tokenAddress, splitAddress)
 
   const isLoading = isLoadingRollup || isLoadingSplitContract
 
-  const totalRewards = (rollupBalance || 0n) + (splitContractBalance || 0n)
+  const totalRewards = rollupBalance + (splitContractBalance || 0n)
   const isDelegation = source === "delegation"
 
   // Calculate user's share if we have the take rate (delegation splits)

@@ -43,7 +43,8 @@ export const WalletDirectStakeItem = ({
     activationThreshold,
     ejectionThreshold,
     healthPercentage,
-    slashCount,
+    lossAmount,
+    lossPercentage,
     isAtRisk,
     isCritical,
     isLoading: isLoadingHealth
@@ -79,7 +80,7 @@ export const WalletDirectStakeItem = ({
                   isLoading={isLoadingStatus}
                   isUnstaked={isUnstaked}
                   isInQueue={isInQueue}
-                  slashCount={slashCount}
+                  lossPercentage={lossPercentage}
                   isAtRisk={isAtRisk}
                 />
               )}
@@ -236,7 +237,8 @@ export const WalletDirectStakeItem = ({
                       activationThreshold={activationThreshold}
                       ejectionThreshold={ejectionThreshold}
                       healthPercentage={healthPercentage}
-                      slashCount={slashCount}
+                      lossAmount={lossAmount}
+                      lossPercentage={lossPercentage}
                       isAtRisk={isAtRisk}
                       isCritical={isCritical}
                       isLoading={isLoadingHealth}

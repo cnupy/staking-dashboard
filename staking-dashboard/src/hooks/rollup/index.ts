@@ -1,8 +1,8 @@
 export { useRollupData } from "./useRollupData";
 export { useActivationThresholdFormatted } from "./useActivationThresholdFormatted";
 export { useSequencerRewards } from "./useSequencerRewards";
-export { useClaimSequencerRewards } from "./useClaimSequencerRewards";
 export { useIsRewardsClaimable } from "./useIsRewardsClaimable";
+export { useIsRewardsClaimableAcrossRollups } from "./useIsRewardsClaimableAcrossRollups";
 export { useEjectionThreshold } from "./useEjectionThreshold";
 export { useStakeHealth } from "./useStakeHealth";
 export type { StakeHealth } from "./useStakeHealth";
