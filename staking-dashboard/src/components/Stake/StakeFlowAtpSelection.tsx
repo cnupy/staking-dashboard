@@ -83,15 +83,22 @@ export const StakeFlowAtpSelection = ({ columns = 3, itemsPerPage: customItemsPe
       return
     }
 
+    // The `in` checks narrow `tx.metadata` to the staking-metadata variants
+    // (ClaimMetadata doesn't have `atpAddress`/`stakeCount`); without them the
+    // union widens and the field accesses fail to typecheck.
     const stakeCountFromTokenApprovalTx = transactions.filter(tx =>
       tx.type === transactionType &&
-      tx.metadata?.stepType === ATPStakingStepsWithTransaction.TokenApproval &&
-      tx.metadata?.atpAddress === selectedAtp.atpAddress &&
-      tx.metadata?.stakeCount
+      tx.metadata &&
+      "atpAddress" in tx.metadata &&
+      "stakeCount" in tx.metadata &&
+      tx.metadata.stepType === ATPStakingStepsWithTransaction.TokenApproval &&
+      tx.metadata.atpAddress === selectedAtp.atpAddress &&
+      tx.metadata.stakeCount
     )
 
-    if (stakeCountFromTokenApprovalTx.length && stakeCountFromTokenApprovalTx[0].metadata?.stakeCount) {
-      updateFormData({ stakeCount: stakeCountFromTokenApprovalTx[0].metadata?.stakeCount })
+    const firstMatch = stakeCountFromTokenApprovalTx[0]
+    if (firstMatch && firstMatch.metadata && "stakeCount" in firstMatch.metadata && firstMatch.metadata.stakeCount) {
+      updateFormData({ stakeCount: firstMatch.metadata.stakeCount })
       setIsCountModalOpen(false)
     }
   }, [transactions, selectedAtp, updateFormData])
@@ -113,8 +120,9 @@ export const StakeFlowAtpSelection = ({ columns = 3, itemsPerPage: customItemsPe
   const hasPendingTransactionsForAtp = useCallback((atp: ATPData) => {
     return transactions.some(tx =>
       tx.status === 'pending' &&
-      tx.metadata?.atpAddress === atp.atpAddress &&
-      tx.type === transactionType
+      tx.type === transactionType &&
+      tx.metadata && "atpAddress" in tx.metadata &&
+      tx.metadata.atpAddress === atp.atpAddress
     )
   }, [transactions])
 
