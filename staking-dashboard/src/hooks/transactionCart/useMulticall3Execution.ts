@@ -448,6 +448,7 @@ export function useMulticall3Execution({
     allTransactions: CartTransaction[],
   ): Promise<void> => {
     if (!walletClient || !publicClient) {
+      showAlert('error', 'Wallet client not ready')
       throw new Error('Wallet client not ready')
     }
 
@@ -468,6 +469,7 @@ export function useMulticall3Execution({
 
     const hasExecutingTx = allTransactions.some((tx) => tx.status === 'executing' && tx.txHash)
     if (hasExecutingTx) {
+      showAlert('info', 'Please wait for the current transaction to complete')
       throw new Error('Please wait for the current transaction to complete')
     }
 
