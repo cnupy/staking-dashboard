@@ -448,7 +448,9 @@ export function useMulticall3Execution({
     allTransactions: CartTransaction[],
   ): Promise<void> => {
     if (!walletClient || !publicClient) {
-      showAlert('error', 'Wallet client not ready')
+      // Don't `showAlert` here — `TransactionCartContext.executeAll` wraps
+      // this in a try/catch and emits the toast from `error.message`.
+      // Calling showAlert too would double-render the same toast.
       throw new Error('Wallet client not ready')
     }
 
@@ -469,7 +471,7 @@ export function useMulticall3Execution({
 
     const hasExecutingTx = allTransactions.some((tx) => tx.status === 'executing' && tx.txHash)
     if (hasExecutingTx) {
-      showAlert('info', 'Please wait for the current transaction to complete')
+      // See note above: outer wrapper emits the toast from `error.message`.
       throw new Error('Please wait for the current transaction to complete')
     }
 
@@ -515,12 +517,14 @@ export function useMulticall3Execution({
       if (!sim.ok) {
         const reason = `Batch simulation failed${chunkLabel}: ${sim.reason}`
         const friendlyReason = parseContractError(sim.reason)
+        // Mark every entry in the chunk failed so the cart panel shows
+        // per-entry attribution. The user-facing toast is emitted by the
+        // outer `TransactionCartContext.executeAll` catch from `error.message`.
         setTransactions((prev) => prev.map((t) =>
           chunk.some((p) => p.id === t.id)
             ? { ...t, status: 'failed' as TransactionStatus, error: friendlyReason }
             : t,
         ))
-        showAlert('error', reason)
         throw new Error(reason)
       }
 
@@ -529,12 +533,13 @@ export function useMulticall3Execution({
       const outcome = verifyOutcome(sim.returnData, chunk.length)
       if (!outcome.ok) {
         const reason = `Batch outcome check failed${chunkLabel}: ${outcome.reason}`
+        // See note in 3a: toast comes from the outer wrapper; this block
+        // only adds per-entry failure attribution.
         setTransactions((prev) => prev.map((t) =>
           chunk.some((p) => p.id === t.id)
             ? { ...t, status: 'failed' as TransactionStatus, error: outcome.reason }
             : t,
         ))
-        showAlert('error', reason)
         throw new Error(reason)
       }
 
