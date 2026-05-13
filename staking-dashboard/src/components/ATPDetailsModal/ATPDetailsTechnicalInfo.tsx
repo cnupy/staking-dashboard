@@ -1,16 +1,18 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { Icon } from "@/components/Icon"
 import { useAtpRegistryData, useStakerImplementations } from "@/hooks/atpRegistry"
 import { useStakerImplementation as useStakerImplementationFromStaker } from "@/hooks/staker/useStakerImplementation"
-import { useUpgradeStaker } from "@/hooks/atp"
 import { AddressDisplay } from "@/components/AddressDisplay"
 import { TooltipIcon } from "@/components/Tooltip"
+import { useTransactionCart } from "@/contexts/TransactionCartContext"
+import { buildUpgradeStakerEntry } from "@/utils/actionCart"
 import { getVersionByImplementation, getImplementationDescription } from "@/utils/stakerVersion"
 import type { ATPData } from "@/hooks/atp"
 import type { Address } from "viem"
 
 interface ATPDetailsTechnicalInfoProps {
   atp: ATPData
+  // Kept for source-compatibility; cart execution drives refetch globally.
   onUpgradeSuccess?: () => void
 }
 
@@ -18,10 +20,11 @@ interface ATPDetailsTechnicalInfoProps {
  * Component displaying technical details of a Token Vault position
  * Shows vault address, and staker information if staker contract exists
  */
-export const ATPDetailsTechnicalInfo = ({ atp, onUpgradeSuccess }: ATPDetailsTechnicalInfoProps) => {
+export const ATPDetailsTechnicalInfo = ({ atp }: ATPDetailsTechnicalInfoProps) => {
   const [isTechnicalDetailsExpanded, setIsTechnicalDetailsExpanded] = useState(true)
+  const { addTransaction, checkStepGroupInQueue, openCart } = useTransactionCart()
 
-  const { implementation: stakerImplementation, isLoading: isLoadingImplementation, refetch } = useStakerImplementationFromStaker(
+  const { implementation: stakerImplementation, isLoading: isLoadingImplementation } = useStakerImplementationFromStaker(
     atp.staker as Address
   )
 
@@ -29,7 +32,6 @@ export const ATPDetailsTechnicalInfo = ({ atp, onUpgradeSuccess }: ATPDetailsTec
     registryAddress: atp.registry
   })
   const { implementations, isLoading: isLoadingImplementations } = useStakerImplementations(stakerVersions, atp.registry)
-  const upgradeStakerHook = useUpgradeStaker(atp.atpAddress as Address)
 
   const stakerVersion = useMemo(() => {
     return getVersionByImplementation(stakerImplementation, implementations)
@@ -47,23 +49,22 @@ export const ATPDetailsTechnicalInfo = ({ atp, onUpgradeSuccess }: ATPDetailsTec
     return getImplementationDescription(stakerImplementation, stakerVersion!)
   }, [stakerImplementation, stakerVersion])
 
-  useEffect(() => {
-    if (upgradeStakerHook.isSuccess) {
-      refetch()
-      onUpgradeSuccess?.()
-    }
-  }, [upgradeStakerHook.isSuccess, refetch, onUpgradeSuccess])
-
   const isOnLatestVersion = stakerVersion !== null && latestVersion !== null && stakerVersion === latestVersion
   const isLoadingVersion = isLoadingImplementation || isLoadingImplementations
 
-  const handleUpgrade = async () => {
-    if (!latestVersion) return
-    try {
-      await upgradeStakerHook.upgradeStaker(latestVersion)
-    } catch (error) {
-      console.error('Failed to upgrade staker:', error)
-    }
+  const upgradeEntry = useMemo(() => {
+    if (!latestVersion) return undefined
+    return buildUpgradeStakerEntry({ atpAddress: atp.atpAddress as Address, version: latestVersion })
+  }, [latestVersion, atp.atpAddress])
+
+  const isUpgradeQueued = !!upgradeEntry && !!upgradeEntry.metadata?.stepType &&
+    !!upgradeEntry.metadata?.stepGroupIdentifier &&
+    checkStepGroupInQueue(upgradeEntry.metadata.stepType, upgradeEntry.metadata.stepGroupIdentifier)
+
+  const handleUpgrade = () => {
+    if (!upgradeEntry) return
+    addTransaction(upgradeEntry, { preventDuplicate: true })
+    openCart()
   }
 
   return (
@@ -130,29 +131,25 @@ export const ATPDetailsTechnicalInfo = ({ atp, onUpgradeSuccess }: ATPDetailsTec
                     </>
                   ) : (
                     <>
-                      <button
-                        onClick={handleUpgrade}
-                        disabled={upgradeStakerHook.isPending || upgradeStakerHook.isConfirming}
-                        className="bg-chartreuse text-ink py-2 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-parchment hover:text-ink transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {upgradeStakerHook.isPending
-                          ? "Confirm in Wallet..."
-                          : upgradeStakerHook.isConfirming
-                            ? "Upgrading..."
-                            : `Upgrade to Latest`}
-                      </button>
+                      {isUpgradeQueued ? (
+                        <button
+                          onClick={openCart}
+                          className="bg-chartreuse/20 border border-chartreuse/40 text-chartreuse py-2 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-chartreuse/30 transition-all flex items-center gap-1"
+                        >
+                          <Icon name="shoppingCart" size="sm" />
+                          In Batch
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleUpgrade}
+                          disabled={!upgradeEntry}
+                          className="bg-chartreuse text-ink py-2 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-parchment hover:text-ink transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Upgrade to Latest
+                        </button>
+                      )}
                       <div className="text-xs text-parchment/60 mt-1">{currentDescription}</div>
                     </>
-                  )}
-                  {upgradeStakerHook.error && (
-                    <div className="text-xs text-vermillion mt-1">
-                      {upgradeStakerHook.error.message.includes('rejected') ? 'Transaction cancelled' : 'Upgrade failed'}
-                    </div>
-                  )}
-                  {upgradeStakerHook.isSuccess && (
-                    <div className="text-xs text-chartreuse mt-1">
-                      Successfully upgraded to latest version
-                    </div>
                   )}
                 </div>
               </>

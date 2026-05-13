@@ -2,9 +2,10 @@ import { useState, useMemo, useEffect } from "react"
 import type { Address } from "viem"
 import { useAtpRegistryData, useStakerImplementations } from "@/hooks/atpRegistry"
 import { useStakerImplementation as useStakerImplementationFromStaker } from "@/hooks/staker/useStakerImplementation"
-import { useUpgradeStaker } from "@/hooks/atp"
 import { Icon } from "@/components/Icon"
 import { TooltipIcon } from "@/components/Tooltip"
+import { useTransactionCart } from "@/contexts/TransactionCartContext"
+import { buildUpgradeStakerEntry } from "@/utils/actionCart"
 import {
   getVersionByImplementation,
   getImplementationDescription,
@@ -30,12 +31,12 @@ interface ATPDetailsStakerManagementProps {
 export const ATPDetailsStakerManagement = ({ atp }: ATPDetailsStakerManagementProps) => {
   const [selectedVersion, setSelectedVersion] = useState<bigint | null>(null)
   const [isOpen, setIsOpen] = useState(false)
+  const { addTransaction, checkStepGroupInQueue, openCart } = useTransactionCart()
 
   // Get current implementation
   const {
     implementation: currentImplementation,
     isLoading: isLoadingImplementation,
-    refetch: refetchImplementation
   } = useStakerImplementationFromStaker(atp.staker as Address)
 
   // Get available versions
@@ -43,9 +44,6 @@ export const ATPDetailsStakerManagement = ({ atp }: ATPDetailsStakerManagementPr
     registryAddress: atp.registry
   })
   const { implementations, isLoading: isLoadingImplementations } = useStakerImplementations(stakerVersions, atp.registry)
-
-  // Staker operations
-  const upgradeStakerHook = useUpgradeStaker(atp.atpAddress as Address)
 
   // Get current version number
   const currentVersion = useMemo(() => {
@@ -67,24 +65,23 @@ export const ATPDetailsStakerManagement = ({ atp }: ATPDetailsStakerManagementPr
     }
   }, [selectedVersion, currentVersion, stakerVersions, isLoadingImplementation])
 
-  // Refetch implementation after successful upgrade
-  useEffect(() => {
-    if (upgradeStakerHook.isSuccess) {
-      refetchImplementation()
-    }
-  }, [upgradeStakerHook.isSuccess, refetchImplementation])
+  const upgradeEntry = useMemo(() => {
+    if (!selectedVersion) return undefined
+    return buildUpgradeStakerEntry({ atpAddress: atp.atpAddress as Address, version: selectedVersion })
+  }, [selectedVersion, atp.atpAddress])
+
+  const isUpgradeQueued = !!upgradeEntry && !!upgradeEntry.metadata?.stepType &&
+    !!upgradeEntry.metadata?.stepGroupIdentifier &&
+    checkStepGroupInQueue(upgradeEntry.metadata.stepType, upgradeEntry.metadata.stepGroupIdentifier)
 
   const handleVersionChange = (value: string) => {
     setSelectedVersion(BigInt(value))
   }
 
-  const handleUpgrade = async () => {
-    if (!selectedVersion) return
-    try {
-      await upgradeStakerHook.upgradeStaker(selectedVersion)
-    } catch (error) {
-      console.error('Failed to upgrade staker:', error)
-    }
+  const handleUpgrade = () => {
+    if (!upgradeEntry) return
+    addTransaction(upgradeEntry, { preventDuplicate: true })
+    openCart()
   }
 
   const isLoading = isLoadingImplementation || isLoadingImplementations
@@ -211,7 +208,6 @@ export const ATPDetailsStakerManagement = ({ atp }: ATPDetailsStakerManagementPr
                     <Select
                       value={selectedVersion?.toString() || ""}
                       onValueChange={handleVersionChange}
-                      disabled={upgradeStakerHook.isPending || upgradeStakerHook.isConfirming}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -233,31 +229,24 @@ export const ATPDetailsStakerManagement = ({ atp }: ATPDetailsStakerManagementPr
                     </Select>
                   </div>
                   {canUpgrade && (
-                    <button
-                      onClick={handleUpgrade}
-                      disabled={upgradeStakerHook.isPending || upgradeStakerHook.isConfirming}
-                      className="bg-chartreuse text-ink py-2 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-chartreuse/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                    >
-                      {upgradeStakerHook.isPending
-                        ? "Confirming..."
-                        : upgradeStakerHook.isConfirming
-                        ? "Upgrading..."
-                        : "Upgrade"}
-                    </button>
+                    isUpgradeQueued ? (
+                      <button
+                        onClick={openCart}
+                        className="bg-chartreuse/20 border border-chartreuse/40 text-chartreuse py-2 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-chartreuse/30 transition-all whitespace-nowrap flex items-center gap-1"
+                      >
+                        <Icon name="shoppingCart" size="sm" />
+                        In Batch
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleUpgrade}
+                        className="bg-chartreuse text-ink py-2 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-chartreuse/90 transition-all whitespace-nowrap"
+                      >
+                        Add to Batch
+                      </button>
+                    )
                   )}
                 </div>
-
-                {upgradeStakerHook.error && (
-                  <div className="text-xs text-vermillion">
-                    {upgradeStakerHook.error.message.includes('rejected') ? 'Transaction cancelled' : 'Upgrade failed'}
-                  </div>
-                )}
-
-                {upgradeStakerHook.isSuccess && (
-                  <div className="text-xs text-chartreuse">
-                    Successfully upgraded to v{selectedVersion?.toString()}
-                  </div>
-                )}
               </div>
             </>
           )}

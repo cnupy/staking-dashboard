@@ -1,5 +1,5 @@
 import type { CartTransaction } from "@/contexts/TransactionCartContext"
-import { ClaimStepTypeName } from "@/contexts/TransactionCartContext"
+import { ClaimStepTypeName, UnstakeStepTypeName, ActionStepTypeName } from "@/contexts/TransactionCartContext"
 import { CopyButton } from "@/components/CopyButton/CopyButton"
 import { Icon } from "@/components/Icon"
 import { openTxInExplorer } from "@/utils/explorerUtils"
@@ -187,6 +187,128 @@ export const TransactionCartDetailsExpanded = ({ transaction }: TransactionCartD
                     <div className="text-[10px] text-parchment/50 mb-1">Expected Amount</div>
                     <code className="text-[10px] font-mono text-parchment">
                       {transaction.metadata.amount.toString()}
+                    </code>
+                  </div>
+                )}
+              </>
+            )}
+            {transaction.type === "unstake" && (
+              <>
+                {transaction.metadata.stepType && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Step</div>
+                    <code className="text-[10px] font-mono text-parchment">
+                      {UnstakeStepTypeName[transaction.metadata.stepType]}
+                    </code>
+                  </div>
+                )}
+                {transaction.metadata.attesterAddress && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Attester</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono text-chartreuse break-all">
+                        {transaction.metadata.attesterAddress}
+                      </code>
+                      <CopyButton text={transaction.metadata.attesterAddress} size="sm" />
+                    </div>
+                  </div>
+                )}
+                {transaction.metadata.recipient && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Recipient</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono text-chartreuse break-all">
+                        {transaction.metadata.recipient}
+                      </code>
+                      <CopyButton text={transaction.metadata.recipient} size="sm" />
+                    </div>
+                  </div>
+                )}
+                {transaction.metadata.rollupAddress && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Rollup</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono text-chartreuse break-all">
+                        {transaction.metadata.rollupAddress}
+                      </code>
+                      <CopyButton text={transaction.metadata.rollupAddress} size="sm" />
+                    </div>
+                  </div>
+                )}
+                {transaction.metadata.stakerAddress && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Staker Contract</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono text-chartreuse break-all">
+                        {transaction.metadata.stakerAddress}
+                      </code>
+                      <CopyButton text={transaction.metadata.stakerAddress} size="sm" />
+                    </div>
+                  </div>
+                )}
+                {transaction.metadata.amount !== undefined && transaction.metadata.amount > 0n && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Amount (raw)</div>
+                    <code className="text-[10px] font-mono text-parchment">
+                      {transaction.metadata.amount.toString()}
+                    </code>
+                  </div>
+                )}
+                {transaction.metadata.withdrawalId !== undefined && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Withdrawal ID</div>
+                    <code className="text-[10px] font-mono text-parchment">
+                      {transaction.metadata.withdrawalId.toString()}
+                    </code>
+                  </div>
+                )}
+                {transaction.metadata.providerName && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Provider</div>
+                    <code className="text-[10px] font-mono text-parchment">
+                      {transaction.metadata.providerName}
+                    </code>
+                  </div>
+                )}
+              </>
+            )}
+            {transaction.type === "action" && (
+              <>
+                {transaction.metadata.stepType && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Step</div>
+                    <code className="text-[10px] font-mono text-parchment">
+                      {ActionStepTypeName[transaction.metadata.stepType]}
+                    </code>
+                  </div>
+                )}
+                {transaction.metadata.contractAddress && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Contract</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono text-chartreuse break-all">
+                        {transaction.metadata.contractAddress}
+                      </code>
+                      <CopyButton text={transaction.metadata.contractAddress} size="sm" />
+                    </div>
+                  </div>
+                )}
+                {transaction.metadata.atpAddress && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Token Vault Address</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-[10px] font-mono text-chartreuse break-all">
+                        {transaction.metadata.atpAddress}
+                      </code>
+                      <CopyButton text={transaction.metadata.atpAddress} size="sm" />
+                    </div>
+                  </div>
+                )}
+                {transaction.metadata.providerId !== undefined && (
+                  <div>
+                    <div className="text-[10px] text-parchment/50 mb-1">Provider ID</div>
+                    <code className="text-[10px] font-mono text-parchment">
+                      {transaction.metadata.providerId}
                     </code>
                   </div>
                 )}

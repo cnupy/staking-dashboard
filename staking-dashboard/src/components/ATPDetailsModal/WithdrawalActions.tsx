@@ -1,75 +1,15 @@
-import { useEffect } from "react";
 import type { Address } from "viem";
 import { useInitiateWithdraw } from "@/hooks/staker/useInitiateWithdraw";
-import { useFinalizeWithdraw } from "@/hooks/rollup/useFinalizeWithdraw";
 import { TooltipIcon } from "@/components/Tooltip";
+import { Icon } from "@/components/Icon";
 import { SequencerStatus } from "@/hooks/rollup/useSequencerStatus";
-import { useAlert } from "@/contexts/AlertContext";
+import { useTransactionCart } from "@/contexts/TransactionCartContext";
 import { getUnlockTimeDisplay } from "@/utils/dateFormatters";
 import { MilestoneStatusBadge } from "@/components/MilestoneStatusBadge";
-
-/**
- * Parse contract errors to extract user-friendly messages
- * Contract errors are often buried in the error object or masked by nonce errors
- */
-function parseContractError(error: Error): string {
-  const message = error.message || "";
-
-  // Known contract error signatures and their user-friendly messages
-  const errorMappings: Record<string, string> = {
-    "Staking__NotExiting": "Sequencer is not in exiting state. Initiate unstake first.",
-    "Staking__ExitDelayNotPassed": "Exit delay has not passed yet. Please wait for the withdrawal period to complete.",
-    "Staking__WithdrawalDelayNotPassed": "Withdrawal delay has not passed yet. Please wait for the withdrawal period to complete.",
-    "NotExiting": "Sequencer is not in exiting state.",
-    "ExitDelayNotPassed": "Exit delay has not passed yet.",
-    "0xef566ee0": "Exit delay has not passed yet. Please wait for the withdrawal period to complete.", // Staking__NotExiting selector
-  };
-
-  // Check for known error patterns
-  for (const [pattern, friendlyMessage] of Object.entries(errorMappings)) {
-    if (message.includes(pattern)) {
-      return friendlyMessage;
-    }
-  }
-
-  // Check for reverted errors that contain the actual reason
-  const revertMatch = message.match(/reverted with.*?["']([^"']+)["']/i);
-  if (revertMatch) {
-    return revertMatch[1];
-  }
-
-  // Check for custom error data in the message
-  const customErrorMatch = message.match(/error=\{[^}]*"data":"(0x[a-f0-9]+)"/i);
-  if (customErrorMatch) {
-    const errorData = customErrorMatch[1];
-    // Check if this matches a known error selector
-    for (const [selector, friendlyMessage] of Object.entries(errorMappings)) {
-      if (errorData.startsWith(selector)) {
-        return friendlyMessage;
-      }
-    }
-  }
-
-  // If we see nonce errors but there's also contract error data, the contract error is the real issue
-  if (message.includes("nonce") && message.includes("0x")) {
-    // Try to find error selector in the message
-    const selectorMatch = message.match(/0x[a-f0-9]{8}/i);
-    if (selectorMatch) {
-      const selector = selectorMatch[0].toLowerCase();
-      if (selector === "0xef566ee0") {
-        return "Exit delay has not passed yet. Please wait for the withdrawal period to complete.";
-      }
-    }
-    return "Transaction failed. The contract rejected the call - please check that all conditions are met.";
-  }
-
-  // Return original message if no pattern matched (but truncate if too long)
-  if (message.length > 200) {
-    return message.substring(0, 200) + "...";
-  }
-
-  return message || "Transaction failed";
-}
+import {
+  buildStakerInitiateWithdrawEntry,
+  buildRollupFinalizeWithdrawEntry,
+} from "@/utils/unstakeCart";
 
 interface WithdrawalActionsProps {
   stakerAddress: Address;
@@ -85,11 +25,16 @@ interface WithdrawalActionsProps {
   atpType?: string;
   registryAddress?: Address;
   milestoneId?: bigint;
+  providerName?: string | null;
 }
 
 /**
- * Component for withdrawal and unstake actions
- * Displays initiate unstake and finalize withdraw buttons with proper state management
+ * Initiate / finalize unstake actions. Queues each as an `unstake` cart entry
+ * so Safe wallets batch them into a single proposal alongside any claims that
+ * happen to be in the same cart. EOA wallets get a sequential prompt per
+ * entry (unstake is `msg.sender`-bound and can't ride through Multicall3),
+ * which matches the prior immediate-tx UX from the user's perspective but
+ * persists across page reloads via the cart's localStorage state.
  */
 export const WithdrawalActions = ({
   stakerAddress,
@@ -101,98 +46,78 @@ export const WithdrawalActions = ({
   actualUnlockTime,
   withdrawalDelayDays,
   onSuccess,
-  // ATP context
   atpType,
   registryAddress,
   milestoneId,
+  providerName,
 }: WithdrawalActionsProps) => {
-  const { showAlert } = useAlert();
   const isExiting = status === SequencerStatus.EXITING;
 
-  const {
-    initiateWithdraw,
-    isPending: isInitiatingWithdraw,
-    isConfirming: isConfirmingInitiate,
-    isSuccess: isInitiateSuccess,
-    error: initiateError,
-    milestoneStatus,
-    isMilestoneLoading,
-    canWithdraw,
-    milestoneBlockError,
-  } = useInitiateWithdraw(stakerAddress, {
-    registryAddress,
-    milestoneId,
-    atpType,
-  });
+  // We only consume the milestone-status read from this hook now; the
+  // immediate `initiateWithdraw(...)` call is replaced by an `addTransaction`
+  // for the cart.
+  const { milestoneStatus, isMilestoneLoading, canWithdraw, milestoneBlockError } =
+    useInitiateWithdraw(stakerAddress, {
+      registryAddress,
+      milestoneId,
+      atpType,
+    });
 
-  const {
-    finalizeWithdraw,
-    isPending: isFinalizingWithdraw,
-    isConfirming: isConfirmingFinalize,
-    isSuccess: isFinalizeSuccess,
-    error: finalizeError,
-  } = useFinalizeWithdraw();
+  const { addTransaction, checkStepGroupInQueue, openCart } = useTransactionCart();
 
-  // Determine if milestone gates operations
-  const isMATP = atpType === 'MATP';
+  const isMATP = atpType === "MATP";
   const isMilestoneGated = isMATP && !canWithdraw;
 
   const canInitiateUnstake =
-    (status === SequencerStatus.VALIDATING || status === SequencerStatus.ZOMBIE)
-    && !isMilestoneGated;  // Block if milestone not succeeded
+    (status === SequencerStatus.VALIDATING || status === SequencerStatus.ZOMBIE) &&
+    !isMilestoneGated;
+  const canFinalizeWithdrawNow = canFinalize && !isMilestoneGated;
 
-  const canFinalizeWithdrawNow =
-    canFinalize
-    && !isMilestoneGated;  // Block if milestone not succeeded
+  // Pre-build the cart entries used by the click handlers. We do NOT use
+  // their raw-calldata signature to detect "already queued" — that flickers
+  // when underlying data (rollup version, attester) refetches mid-render and
+  // causes duplicate cart entries. Use the stable stepGroupIdentifier from
+  // the entry's metadata instead (see `checkStepGroupInQueue`).
+  const initiateEntry = buildStakerInitiateWithdrawEntry({
+    stakerAddress,
+    version: rollupVersion,
+    attester: attesterAddress,
+    providerName,
+  });
+  const finalizeEntry = buildRollupFinalizeWithdrawEntry({
+    rollupAddress,
+    attester: attesterAddress,
+    providerName,
+  });
+  const isInitiateQueued = !!initiateEntry.metadata?.stepType
+    && !!initiateEntry.metadata?.stepGroupIdentifier
+    && checkStepGroupInQueue(initiateEntry.metadata.stepType, initiateEntry.metadata.stepGroupIdentifier);
+  const isFinalizeQueued = !!finalizeEntry.metadata?.stepType
+    && !!finalizeEntry.metadata?.stepGroupIdentifier
+    && checkStepGroupInQueue(finalizeEntry.metadata.stepType, finalizeEntry.metadata.stepGroupIdentifier);
 
-  // Handle initiate withdraw errors
-  useEffect(() => {
-    if (initiateError) {
-      const errorMessage = initiateError.message;
-      if (
-        errorMessage.includes("User rejected") ||
-        errorMessage.includes("rejected")
-      ) {
-        showAlert("warning", "Transaction was cancelled");
-      }
+  const handleInitiateClick = () => {
+    if (isInitiateQueued) {
+      openCart();
+      return;
     }
-  }, [initiateError, showAlert]);
-
-  // Handle finalize withdraw errors
-  useEffect(() => {
-    if (finalizeError) {
-      const errorMessage = finalizeError.message;
-      if (
-        errorMessage.includes("User rejected") ||
-        errorMessage.includes("rejected")
-      ) {
-        showAlert("warning", "Transaction was cancelled");
-      }
-    }
-  }, [finalizeError, showAlert]);
-
-  // Call onSuccess callback when transaction succeeds
-  useEffect(() => {
-    if (isInitiateSuccess || isFinalizeSuccess) {
-      onSuccess?.();
-    }
-  }, [isInitiateSuccess, isFinalizeSuccess, onSuccess]);
-
-  const handleInitiateWithdraw = async () => {
-    try {
-      await initiateWithdraw(rollupVersion, attesterAddress);
-    } catch (error) {
-      console.error("Failed to initiate withdraw:", error);
-    }
+    addTransaction(initiateEntry, { preventDuplicate: true });
+    onSuccess?.();
+    openCart();
   };
 
-  const handleFinalizeWithdraw = async () => {
-    try {
-      await finalizeWithdraw(attesterAddress, rollupAddress);
-    } catch (error) {
-      console.error("Failed to finalize withdraw:", error);
+  const handleFinalizeClick = () => {
+    if (isFinalizeQueued) {
+      openCart();
+      return;
     }
+    addTransaction(finalizeEntry, { preventDuplicate: true });
+    onSuccess?.();
+    openCart();
   };
+
+  const initiateLabel = isInitiateQueued ? "In Batch — Open Cart" : "Add Initiate Unstake";
+  const finalizeLabel = isFinalizeQueued ? "In Batch — Open Cart" : "Add Finalize Withdraw";
 
   return (
     <div className="pt-3 border-t border-parchment/10 space-y-2">
@@ -201,56 +126,48 @@ export const WithdrawalActions = ({
           Withdrawal Actions
         </div>
         <TooltipIcon
-          content="To unstake, first initiate the unstake process. After the withdrawal period completes, you can finalize to receive your funds back to the Token Vault."
+          content="Queue the initiate / finalize unstake transactions in the batch cart. Safe wallets sign once for the whole batch; EOA wallets sign each entry sequentially."
           size="sm"
           maxWidth="max-w-md"
         />
       </div>
 
-      {/* Show milestone status for MATPs */}
       {isMATP && (
         <div className="mb-2">
-          <MilestoneStatusBadge
-            status={milestoneStatus}
-            isLoading={isMilestoneLoading}
-          />
+          <MilestoneStatusBadge status={milestoneStatus} isLoading={isMilestoneLoading} />
         </div>
       )}
 
-      {/* Show milestone error message */}
       {milestoneBlockError && (
         <div className="mb-2 p-3 border border-vermillion/40 bg-vermillion/10 rounded">
-          <div className="text-xs text-vermillion">
-            {milestoneBlockError}
-          </div>
+          <div className="text-xs text-vermillion">{milestoneBlockError}</div>
         </div>
       )}
+
       <div className="flex items-center gap-2">
         <div className="flex-1">
           <button
-            onClick={handleInitiateWithdraw}
-            disabled={
-              !canInitiateUnstake ||
-              isInitiatingWithdraw ||
-              isConfirmingInitiate ||
-              isMilestoneLoading
-            }
-            className="w-full bg-aqua text-ink py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-aqua/90 transition-all disabled:opacity-50 disabled:hover:bg-aqua"
-            title={
-              isMilestoneGated
-                ? milestoneBlockError || undefined
-                : undefined
-            }
+            onClick={handleInitiateClick}
+            disabled={!canInitiateUnstake && !isInitiateQueued || isMilestoneLoading}
+            className={`w-full py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50 ${
+              isInitiateQueued
+                ? "bg-aqua/20 border border-aqua/40 text-aqua hover:bg-aqua/30"
+                : "bg-aqua text-ink hover:bg-aqua/90"
+            }`}
+            title={isMilestoneGated ? milestoneBlockError || undefined : undefined}
           >
-            {isInitiatingWithdraw
-              ? "Confirming..."
-              : isConfirmingInitiate
-                ? "Initiating..."
-                : "Initiate Unstake"}
+            {isInitiateQueued ? (
+              <span className="flex items-center justify-center gap-1.5">
+                <Icon name="shoppingCart" size="sm" />
+                {initiateLabel}
+              </span>
+            ) : (
+              initiateLabel
+            )}
           </button>
           <div className="flex items-center gap-1 mt-1">
             <TooltipIcon
-              content="Starts the unstaking process. Only available when sequencer is Validating or Inactive. This begins the withdrawal waiting period."
+              content="Starts the unstaking process. Only available when sequencer is Validating or Inactive."
               size="sm"
               maxWidth="max-w-xs"
             />
@@ -259,24 +176,26 @@ export const WithdrawalActions = ({
             </span>
           </div>
         </div>
+
         <div className="flex-1">
           <button
-            onClick={handleFinalizeWithdraw}
-            disabled={
-              !canFinalizeWithdrawNow || isFinalizingWithdraw || isConfirmingFinalize
-            }
-            className="w-full bg-chartreuse text-ink py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-chartreuse/90 transition-all disabled:opacity-50 disabled:hover:bg-chartreuse"
-            title={
-              isMilestoneGated
-                ? milestoneBlockError || undefined
-                : undefined
-            }
+            onClick={handleFinalizeClick}
+            disabled={!canFinalizeWithdrawNow && !isFinalizeQueued}
+            className={`w-full py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50 ${
+              isFinalizeQueued
+                ? "bg-chartreuse/20 border border-chartreuse/40 text-chartreuse hover:bg-chartreuse/30"
+                : "bg-chartreuse text-ink hover:bg-chartreuse/90"
+            }`}
+            title={isMilestoneGated ? milestoneBlockError || undefined : undefined}
           >
-            {isFinalizingWithdraw
-              ? "Confirming..."
-              : isConfirmingFinalize
-                ? "Finalizing..."
-                : "Finalize Withdraw"}
+            {isFinalizeQueued ? (
+              <span className="flex items-center justify-center gap-1.5">
+                <Icon name="shoppingCart" size="sm" />
+                {finalizeLabel}
+              </span>
+            ) : (
+              finalizeLabel
+            )}
           </button>
           <div className="flex items-center gap-1 mt-1">
             <TooltipIcon
@@ -290,44 +209,6 @@ export const WithdrawalActions = ({
           </div>
         </div>
       </div>
-
-      {initiateError &&
-        !(
-          initiateError.message.includes("User rejected") ||
-          initiateError.message.includes("rejected")
-        ) && (
-          <div className="bg-vermillion/10 border border-vermillion/20 p-3 rounded">
-            <div className="text-xs font-oracle-standard font-bold text-vermillion mb-1 uppercase tracking-wide">
-              Transaction Error
-            </div>
-            <div className="text-xs text-parchment/80">
-              {parseContractError(initiateError)}
-            </div>
-          </div>
-        )}
-
-      {finalizeError &&
-        !(
-          finalizeError.message.includes("User rejected") ||
-          finalizeError.message.includes("rejected")
-        ) && (
-          <div className="bg-vermillion/10 border border-vermillion/20 p-3 rounded">
-            <div className="text-xs font-oracle-standard font-bold text-vermillion mb-1 uppercase tracking-wide">
-              Transaction Error
-            </div>
-            <div className="text-xs text-parchment/80">
-              {parseContractError(finalizeError)}
-            </div>
-          </div>
-        )}
-
-      {(isInitiateSuccess || isFinalizeSuccess) && (
-        <div className="bg-chartreuse/10 border border-chartreuse/20 p-3 rounded">
-          <div className="text-xs font-oracle-standard font-bold text-chartreuse uppercase tracking-wide">
-            {isInitiateSuccess ? "Unstake Initiated" : "Withdrawal Finalized"}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -16,7 +16,7 @@ export const TransactionCart = () => {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 md:bottom-4 md:left-auto md:right-22 z-50 pointer-events-none">
+    <div className="fixed bottom-0 left-0 right-0 md:bottom-4 md:left-auto md:right-22 z-[70] pointer-events-none">
       <div className="pointer-events-auto px-4 md:px-0">
         <div
           className={`bg-ink border-2 shadow-2xl transition-all duration-300 ease-out ${

@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from "react";
-import { useFinalizeWithdraw, type PendingWithdrawal } from "@/hooks/governance";
+import { useMemo } from "react";
+import { type PendingWithdrawal } from "@/hooks/governance";
 import { formatTokenAmount } from "@/utils/atpFormatters";
-import { useAlert } from "@/contexts/AlertContext";
 import { getExplorerAddressUrl } from "@/utils/explorerUtils";
 import { contracts } from "@/contracts";
+import { useTransactionCart } from "@/contexts/TransactionCartContext";
+import { Icon } from "@/components/Icon";
+import { buildGovernanceFinalizeWithdrawEntry } from "@/utils/unstakeCart";
 import type { Address } from "viem";
 
 interface AtpInfo {
@@ -32,7 +34,6 @@ export function PendingWithdrawals({
   mayHaveOlderWithdrawals = false,
   onSuccess,
 }: PendingWithdrawalsProps) {
-
   // Build a map of ATP address -> sequential number for source labeling
   const atpAddressToNumber = useMemo(() => {
     const map = new Map<string, number>();
@@ -53,41 +54,21 @@ export function PendingWithdrawals({
     }
     return "Unknown";
   };
-  const finalizeWithdraw = useFinalizeWithdraw();
-  const { showAlert } = useAlert();
-  const [finalizingId, setFinalizingId] = useState<bigint | null>(null);
 
-  // Track previous success state to detect transitions
-  const prevSuccessRef = useRef(false);
+  const { addTransaction, checkStepGroupInQueue, openCart } = useTransactionCart();
 
-  useEffect(() => {
-    if (finalizeWithdraw.isSuccess && !prevSuccessRef.current) {
-      setFinalizingId(null);
-      onSuccess();
-    }
-    prevSuccessRef.current = finalizeWithdraw.isSuccess;
-  }, [finalizeWithdraw.isSuccess, onSuccess]);
-
-  const handleFinalize = async (withdrawalId: bigint) => {
-    setFinalizingId(withdrawalId);
-    try {
-      await finalizeWithdraw.finalizeWithdraw(withdrawalId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Finalize failed";
-      showAlert("error", message);
-      setFinalizingId(null);
-    }
+  const handleFinalize = (withdrawalId: bigint) => {
+    const entry = buildGovernanceFinalizeWithdrawEntry({ withdrawalId });
+    addTransaction(entry, { preventDuplicate: true });
+    onSuccess();
+    openCart();
   };
 
-  // Watch for transaction errors from hook
-  const prevErrorRef = useRef(false);
-  useEffect(() => {
-    if (finalizeWithdraw.isError && !prevErrorRef.current && finalizeWithdraw.error) {
-      showAlert("error", finalizeWithdraw.error.message);
-      setFinalizingId(null);
-    }
-    prevErrorRef.current = finalizeWithdraw.isError;
-  }, [finalizeWithdraw.isError, finalizeWithdraw.error, showAlert]);
+  const isWithdrawalQueued = (withdrawalId: bigint): boolean => {
+    const entry = buildGovernanceFinalizeWithdrawEntry({ withdrawalId });
+    if (!entry.metadata?.stepType || !entry.metadata?.stepGroupIdentifier) return false;
+    return checkStepGroupInQueue(entry.metadata.stepType, entry.metadata.stepGroupIdentifier);
+  };
 
   const formatUnlockTime = (unlocksAt: bigint) => {
     const now = BigInt(Math.floor(Date.now() / 1000));
@@ -105,11 +86,7 @@ export function PendingWithdrawals({
   };
 
   if (isLoading) {
-    return (
-      <div className="text-xs text-parchment/50">
-        Loading withdrawals...
-      </div>
-    );
+    return <div className="text-xs text-parchment/50">Loading withdrawals...</div>;
   }
 
   if (pendingWithdrawals.length === 0 && !mayHaveOlderWithdrawals) {
@@ -129,9 +106,9 @@ export function PendingWithdrawals({
             sourceLabel={getSourceLabel(withdrawal.recipient)}
             symbol={symbol}
             decimals={decimals}
-            isProcessing={finalizingId === withdrawal.withdrawalId}
-            isPending={finalizeWithdraw.isPending || finalizeWithdraw.isConfirming}
-            onFinalize={() => handleFinalize(withdrawal.withdrawalId)}
+            isQueued={isWithdrawalQueued(withdrawal.withdrawalId)}
+            onAddToBatch={() => handleFinalize(withdrawal.withdrawalId)}
+            onOpenCart={openCart}
             formatUnlockTime={formatUnlockTime}
           />
         ))}
@@ -159,9 +136,9 @@ interface WithdrawalRowProps {
   sourceLabel: string;
   symbol?: string;
   decimals: number;
-  isProcessing: boolean;
-  isPending: boolean;
-  onFinalize: () => void;
+  isQueued: boolean;
+  onAddToBatch: () => void;
+  onOpenCart: () => void;
   formatUnlockTime: (unlocksAt: bigint) => string;
 }
 
@@ -170,9 +147,9 @@ function WithdrawalRow({
   sourceLabel,
   symbol,
   decimals,
-  isProcessing,
-  isPending,
-  onFinalize,
+  isQueued,
+  onAddToBatch,
+  onOpenCart,
   formatUnlockTime,
 }: WithdrawalRowProps) {
   const unlockText = formatUnlockTime(withdrawal.unlocksAt);
@@ -185,13 +162,22 @@ function WithdrawalRow({
         {formatTokenAmount(withdrawal.amount, decimals, symbol)}
       </span>
       {isReady ? (
-        <button
-          onClick={onFinalize}
-          disabled={isProcessing || isPending}
-          className="px-2 py-0.5 text-sm bg-chartreuse text-ink font-oracle-standard hover:bg-chartreuse/90 disabled:opacity-50 ml-auto"
-        >
-          {isProcessing ? "Finalizing..." : "Finalize"}
-        </button>
+        isQueued ? (
+          <button
+            onClick={onOpenCart}
+            className="px-2 py-0.5 text-sm bg-chartreuse/20 border border-chartreuse/40 text-chartreuse font-oracle-standard hover:bg-chartreuse/30 ml-auto flex items-center gap-1"
+          >
+            <Icon name="shoppingCart" size="sm" />
+            In Batch
+          </button>
+        ) : (
+          <button
+            onClick={onAddToBatch}
+            className="px-2 py-0.5 text-sm bg-chartreuse text-ink font-oracle-standard hover:bg-chartreuse/90 ml-auto"
+          >
+            Add Finalize
+          </button>
+        )
       ) : (
         <span className="text-parchment/40 ml-auto transition-colors group-hover:text-parchment">
           unlocks in {unlockText}

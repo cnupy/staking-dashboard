@@ -1,10 +1,12 @@
-import { useState, useMemo, useEffect } from "react"
+import { useMemo } from "react"
 import type { Address } from "viem"
 import { formatEther } from "viem"
 import { useAtpRegistryData, useStakerImplementations } from "@/hooks/atpRegistry"
 import { useStakerImplementation } from "@/hooks/staker/useStakerImplementation"
-import { useUpgradeStaker } from "@/hooks/atp"
 import { TooltipIcon } from "@/components/Tooltip"
+import { Icon } from "@/components/Icon"
+import { useTransactionCart } from "@/contexts/TransactionCartContext"
+import { buildUpgradeStakerEntry } from "@/utils/actionCart"
 import {
   getVersionByImplementation,
   getImplementationDescription,
@@ -17,6 +19,7 @@ interface UpgradeStakerModalProps {
   isOpen: boolean
   onClose: () => void
   atp: ATPData
+  // Kept for source-compatibility; cart execution drives refetch globally.
   onSuccess?: () => void
 }
 
@@ -24,15 +27,13 @@ export const UpgradeStakerModal = ({
   isOpen,
   onClose,
   atp,
-  onSuccess
 }: UpgradeStakerModalProps) => {
-  const [hasUpgraded, setHasUpgraded] = useState(false)
+  const { addTransaction, checkStepGroupInQueue, openCart } = useTransactionCart()
 
   // Get current implementation from staker contract
   const {
     implementation: currentImplementation,
     isLoading: isLoadingImplementation,
-    refetch: refetchImplementation
   } = useStakerImplementation(atp.staker as Address)
 
   // Get available versions from registry
@@ -40,9 +41,6 @@ export const UpgradeStakerModal = ({
     registryAddress: atp.registry
   })
   const { implementations, isLoading: isLoadingImplementations } = useStakerImplementations(stakerVersions, atp.registry)
-
-  // Upgrade hook
-  const upgradeStakerHook = useUpgradeStaker(atp.atpAddress as Address)
 
   // Get current version number
   const currentVersion = useMemo(() => {
@@ -61,29 +59,19 @@ export const UpgradeStakerModal = ({
     : undefined
   const latestDescription = getImplementationDescription(latestImplementation, latestVersion ?? undefined)
 
-  // Handle successful upgrade
-  useEffect(() => {
-    if (upgradeStakerHook.isSuccess && !hasUpgraded) {
-      setHasUpgraded(true)
-      refetchImplementation()
-      onSuccess?.()
-    }
-  }, [upgradeStakerHook.isSuccess, hasUpgraded, refetchImplementation, onSuccess])
+  const upgradeEntry = useMemo(() => {
+    if (!latestVersion) return undefined
+    return buildUpgradeStakerEntry({ atpAddress: atp.atpAddress as Address, version: latestVersion })
+  }, [latestVersion, atp.atpAddress])
 
-  // Reset state when modal closes
-  useEffect(() => {
-    if (!isOpen) {
-      setHasUpgraded(false)
-    }
-  }, [isOpen])
+  const isUpgradeQueued = !!upgradeEntry && !!upgradeEntry.metadata?.stepType &&
+    !!upgradeEntry.metadata?.stepGroupIdentifier &&
+    checkStepGroupInQueue(upgradeEntry.metadata.stepType, upgradeEntry.metadata.stepGroupIdentifier)
 
-  const handleUpgrade = async () => {
-    if (!latestVersion) return
-    try {
-      await upgradeStakerHook.upgradeStaker(latestVersion)
-    } catch (error) {
-      console.error('Failed to upgrade staker:', error)
-    }
+  const handleUpgrade = () => {
+    if (!upgradeEntry) return
+    addTransaction(upgradeEntry, { preventDuplicate: true })
+    openCart()
   }
 
   const handleClose = () => {
@@ -93,7 +81,6 @@ export const UpgradeStakerModal = ({
   if (!isOpen) return null
 
   const isLoading = isLoadingImplementation || isLoadingImplementations
-  const isProcessing = upgradeStakerHook.isPending || upgradeStakerHook.isConfirming
   const needsUpgrade = currentVersion === null || currentVersion === 0n || (latestVersion !== null && currentVersion < latestVersion)
   const isAlreadyLatest = latestVersion !== null && currentVersion === latestVersion
 
@@ -194,42 +181,30 @@ export const UpgradeStakerModal = ({
               </div>
 
               {/* Upgrade Button / Status */}
-              {hasUpgraded || upgradeStakerHook.isSuccess ? (
-                <div className="bg-chartreuse/10 border border-chartreuse/40 p-4 text-center">
-                  <span className="text-chartreuse font-oracle-standard font-bold text-sm">
-                    ✓ Successfully upgraded to v{latestVersion?.toString()}
-                  </span>
-                </div>
-              ) : isAlreadyLatest ? (
+              {isAlreadyLatest ? (
                 <div className="bg-aqua/10 border border-aqua/40 p-4 text-center">
                   <span className="text-aqua font-oracle-standard font-bold text-sm">
                     Already on latest version
                   </span>
                 </div>
               ) : needsUpgrade && latestVersion !== null ? (
-                <button
-                  onClick={handleUpgrade}
-                  disabled={isProcessing}
-                  className="w-full bg-chartreuse text-ink py-3 px-4 font-oracle-standard font-bold text-sm uppercase tracking-wider hover:bg-chartreuse/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {upgradeStakerHook.isPending
-                    ? "Waiting for confirmation..."
-                    : upgradeStakerHook.isConfirming
-                    ? "Upgrading..."
-                    : `Upgrade to v${latestVersion.toString()}`
-                  }
-                </button>
+                isUpgradeQueued ? (
+                  <button
+                    onClick={openCart}
+                    className="w-full bg-chartreuse/20 border border-chartreuse/40 text-chartreuse py-3 px-4 font-oracle-standard font-bold text-sm uppercase tracking-wider hover:bg-chartreuse/30 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Icon name="shoppingCart" size="sm" />
+                    In Batch — Open Cart
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleUpgrade}
+                    className="w-full bg-chartreuse text-ink py-3 px-4 font-oracle-standard font-bold text-sm uppercase tracking-wider hover:bg-chartreuse/90 transition-all"
+                  >
+                    Add upgrade to v{latestVersion.toString()} to batch
+                  </button>
+                )
               ) : null}
-
-              {/* Error Message */}
-              {upgradeStakerHook.error && (
-                <div className="text-xs text-vermillion text-center">
-                  {upgradeStakerHook.error.message.includes('rejected')
-                    ? 'Transaction cancelled by user'
-                    : 'Upgrade failed. Please try again.'
-                  }
-                </div>
-              )}
             </div>
           )}
         </div>

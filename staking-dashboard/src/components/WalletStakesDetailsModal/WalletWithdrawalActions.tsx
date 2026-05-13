@@ -1,65 +1,13 @@
-import { useEffect, useRef } from "react"
 import type { Address } from "viem"
-import { useWalletInitiateWithdraw, useFinalizeWithdraw, SequencerStatus } from "@/hooks/rollup"
+import { SequencerStatus } from "@/hooks/rollup"
 import { TooltipIcon } from "@/components/Tooltip"
-import { useAlert } from "@/contexts/AlertContext"
+import { Icon } from "@/components/Icon"
+import { useTransactionCart } from "@/contexts/TransactionCartContext"
 import { getUnlockTimeDisplay } from "@/utils/dateFormatters"
-
-/**
- * Parse contract errors to extract user-friendly messages
- */
-function parseContractError(error: Error): string {
-  const message = error.message || ""
-
-  const errorMappings: Record<string, string> = {
-    "Staking__NotExiting": "Sequencer is not in exiting state. Initiate unstake first.",
-    "Staking__ExitDelayNotPassed": "Exit delay has not passed yet. Please wait for the withdrawal period to complete.",
-    "Staking__WithdrawalDelayNotPassed": "Withdrawal delay has not passed yet. Please wait for the withdrawal period to complete.",
-    "Staking__NotTheWithdrawer": "You are not the withdrawer for this stake. Only the original staker can initiate withdrawal.",
-    "NotExiting": "Sequencer is not in exiting state.",
-    "ExitDelayNotPassed": "Exit delay has not passed yet.",
-    "NotTheWithdrawer": "Only the withdrawer can initiate withdrawal.",
-    "0xef566ee0": "Exit delay has not passed yet. Please wait for the withdrawal period to complete.",
-  }
-
-  for (const [pattern, friendlyMessage] of Object.entries(errorMappings)) {
-    if (message.includes(pattern)) {
-      return friendlyMessage
-    }
-  }
-
-  const revertMatch = message.match(/reverted with.*?["']([^"']+)["']/i)
-  if (revertMatch) {
-    return revertMatch[1]
-  }
-
-  const customErrorMatch = message.match(/error=\{[^}]*"data":"(0x[a-f0-9]+)"/i)
-  if (customErrorMatch) {
-    const errorData = customErrorMatch[1]
-    for (const [selector, friendlyMessage] of Object.entries(errorMappings)) {
-      if (errorData.startsWith(selector)) {
-        return friendlyMessage
-      }
-    }
-  }
-
-  if (message.includes("nonce") && message.includes("0x")) {
-    const selectorMatch = message.match(/0x[a-f0-9]{8}/i)
-    if (selectorMatch) {
-      const selector = selectorMatch[0].toLowerCase()
-      if (selector === "0xef566ee0") {
-        return "Exit delay has not passed yet. Please wait for the withdrawal period to complete."
-      }
-    }
-    return "Transaction failed. The contract rejected the call - please check that all conditions are met."
-  }
-
-  if (message.length > 200) {
-    return message.substring(0, 200) + "..."
-  }
-
-  return message || "Transaction failed"
-}
+import {
+  buildRollupInitiateWithdrawEntry,
+  buildRollupFinalizeWithdrawEntry,
+} from "@/utils/unstakeCart"
 
 interface WalletWithdrawalActionsProps {
   attesterAddress: Address
@@ -73,8 +21,10 @@ interface WalletWithdrawalActionsProps {
 }
 
 /**
- * Component for wallet stake withdrawal actions
- * Calls the Rollup contract directly for initiate and finalize withdraw
+ * Initiate / finalize unstake actions for the wallet/ERC20 direct-staker path.
+ * Queues each as an `unstake` cart entry instead of firing immediately. Safe
+ * wallets batch the whole cart into one proposal; EOA wallets sign each entry
+ * sequentially (unstake is `msg.sender`-bound — Multicall3 can't batch these).
  */
 export const WalletWithdrawalActions = ({
   attesterAddress,
@@ -86,83 +36,50 @@ export const WalletWithdrawalActions = ({
   withdrawalDelayDays,
   onSuccess,
 }: WalletWithdrawalActionsProps) => {
-  const { showAlert } = useAlert()
   const isExiting = status === SequencerStatus.EXITING
 
-  const {
-    initiateWithdraw,
-    isPending: isInitiatingWithdraw,
-    isConfirming: isConfirmingInitiate,
-    isSuccess: isInitiateSuccess,
-    error: initiateError,
-  } = useWalletInitiateWithdraw()
-
-  const {
-    finalizeWithdraw,
-    isPending: isFinalizingWithdraw,
-    isConfirming: isConfirmingFinalize,
-    isSuccess: isFinalizeSuccess,
-    error: finalizeError,
-  } = useFinalizeWithdraw()
+  const { addTransaction, checkStepGroupInQueue, openCart } = useTransactionCart()
 
   const canInitiateUnstake =
     status === SequencerStatus.VALIDATING || status === SequencerStatus.ZOMBIE
 
-  // Track if success callback was already fired to prevent duplicate calls
-  const successCallbackFiredRef = useRef(false)
+  const initiateEntry = buildRollupInitiateWithdrawEntry({
+    rollupAddress,
+    attester: attesterAddress,
+    recipient: recipientAddress,
+  })
+  const finalizeEntry = buildRollupFinalizeWithdrawEntry({
+    rollupAddress,
+    attester: attesterAddress,
+  })
+  // Queued-state check by stepGroupIdentifier (stable across data refetches)
+  // rather than raw calldata signature (would flicker if the underlying
+  // attester / rollup data changes mid-render and let the user double-queue).
+  const isInitiateQueued = !!initiateEntry.metadata?.stepType
+    && !!initiateEntry.metadata?.stepGroupIdentifier
+    && checkStepGroupInQueue(initiateEntry.metadata.stepType, initiateEntry.metadata.stepGroupIdentifier)
+  const isFinalizeQueued = !!finalizeEntry.metadata?.stepType
+    && !!finalizeEntry.metadata?.stepGroupIdentifier
+    && checkStepGroupInQueue(finalizeEntry.metadata.stepType, finalizeEntry.metadata.stepGroupIdentifier)
 
-  // Reset the ref when success states reset (new transaction cycle)
-  useEffect(() => {
-    if (!isInitiateSuccess && !isFinalizeSuccess) {
-      successCallbackFiredRef.current = false
+  const handleInitiateClick = () => {
+    if (isInitiateQueued) {
+      openCart()
+      return
     }
-  }, [isInitiateSuccess, isFinalizeSuccess])
-
-  useEffect(() => {
-    if (initiateError) {
-      const errorMessage = initiateError.message
-      if (
-        errorMessage.includes("User rejected") ||
-        errorMessage.includes("rejected")
-      ) {
-        showAlert("warning", "Transaction was cancelled")
-      }
-    }
-  }, [initiateError, showAlert])
-
-  useEffect(() => {
-    if (finalizeError) {
-      const errorMessage = finalizeError.message
-      if (
-        errorMessage.includes("User rejected") ||
-        errorMessage.includes("rejected")
-      ) {
-        showAlert("warning", "Transaction was cancelled")
-      }
-    }
-  }, [finalizeError, showAlert])
-
-  useEffect(() => {
-    if ((isInitiateSuccess || isFinalizeSuccess) && !successCallbackFiredRef.current) {
-      successCallbackFiredRef.current = true
-      onSuccess?.()
-    }
-  }, [isInitiateSuccess, isFinalizeSuccess, onSuccess])
-
-  const handleInitiateWithdraw = async () => {
-    try {
-      await initiateWithdraw(attesterAddress, recipientAddress, rollupAddress)
-    } catch (error) {
-      console.error("Failed to initiate withdraw:", error)
-    }
+    addTransaction(initiateEntry, { preventDuplicate: true })
+    onSuccess?.()
+    openCart()
   }
 
-  const handleFinalizeWithdraw = async () => {
-    try {
-      await finalizeWithdraw(attesterAddress, rollupAddress)
-    } catch (error) {
-      console.error("Failed to finalize withdraw:", error)
+  const handleFinalizeClick = () => {
+    if (isFinalizeQueued) {
+      openCart()
+      return
     }
+    addTransaction(finalizeEntry, { preventDuplicate: true })
+    onSuccess?.()
+    openCart()
   }
 
   return (
@@ -172,7 +89,7 @@ export const WalletWithdrawalActions = ({
           Withdrawal Actions
         </div>
         <TooltipIcon
-          content="To unstake, first initiate the unstake process. After the withdrawal period completes, you can finalize to receive your funds back to your wallet."
+          content="Queue the initiate / finalize unstake transactions in the batch cart. Safe wallets sign once for the whole batch; EOA wallets sign each entry sequentially."
           size="sm"
           maxWidth="max-w-md"
         />
@@ -180,23 +97,26 @@ export const WalletWithdrawalActions = ({
       <div className="flex items-center gap-2">
         <div className="flex-1">
           <button
-            onClick={handleInitiateWithdraw}
-            disabled={
-              !canInitiateUnstake ||
-              isInitiatingWithdraw ||
-              isConfirmingInitiate
-            }
-            className="w-full bg-aqua text-ink py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-aqua/90 transition-all disabled:opacity-50 disabled:hover:bg-aqua"
+            onClick={handleInitiateClick}
+            disabled={!canInitiateUnstake && !isInitiateQueued}
+            className={`w-full py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50 ${
+              isInitiateQueued
+                ? "bg-aqua/20 border border-aqua/40 text-aqua hover:bg-aqua/30"
+                : "bg-aqua text-ink hover:bg-aqua/90"
+            }`}
           >
-            {isInitiatingWithdraw
-              ? "Confirming..."
-              : isConfirmingInitiate
-                ? "Initiating..."
-                : "Initiate Unstake"}
+            {isInitiateQueued ? (
+              <span className="flex items-center justify-center gap-1.5">
+                <Icon name="shoppingCart" size="sm" />
+                In Batch — Open Cart
+              </span>
+            ) : (
+              "Add Initiate Unstake"
+            )}
           </button>
           <div className="flex items-center gap-1 mt-1">
             <TooltipIcon
-              content="Starts the unstaking process. Only available when sequencer is Validating or Inactive. This begins the withdrawal waiting period."
+              content="Starts the unstaking process. Only available when sequencer is Validating or Inactive."
               size="sm"
               maxWidth="max-w-xs"
             />
@@ -207,17 +127,22 @@ export const WalletWithdrawalActions = ({
         </div>
         <div className="flex-1">
           <button
-            onClick={handleFinalizeWithdraw}
-            disabled={
-              !canFinalize || isFinalizingWithdraw || isConfirmingFinalize
-            }
-            className="w-full bg-chartreuse text-ink py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider hover:bg-chartreuse/90 transition-all disabled:opacity-50 disabled:hover:bg-chartreuse"
+            onClick={handleFinalizeClick}
+            disabled={!canFinalize && !isFinalizeQueued}
+            className={`w-full py-1.5 px-3 font-oracle-standard font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50 ${
+              isFinalizeQueued
+                ? "bg-chartreuse/20 border border-chartreuse/40 text-chartreuse hover:bg-chartreuse/30"
+                : "bg-chartreuse text-ink hover:bg-chartreuse/90"
+            }`}
           >
-            {isFinalizingWithdraw
-              ? "Confirming..."
-              : isConfirmingFinalize
-                ? "Finalizing..."
-                : "Finalize Withdraw"}
+            {isFinalizeQueued ? (
+              <span className="flex items-center justify-center gap-1.5">
+                <Icon name="shoppingCart" size="sm" />
+                In Batch — Open Cart
+              </span>
+            ) : (
+              "Add Finalize Withdraw"
+            )}
           </button>
           <div className="flex items-center gap-1 mt-1">
             <TooltipIcon
@@ -231,44 +156,6 @@ export const WalletWithdrawalActions = ({
           </div>
         </div>
       </div>
-
-      {initiateError &&
-        !(
-          initiateError.message.includes("User rejected") ||
-          initiateError.message.includes("rejected")
-        ) && (
-          <div className="bg-vermillion/10 border border-vermillion/20 p-3 rounded">
-            <div className="text-xs font-oracle-standard font-bold text-vermillion mb-1 uppercase tracking-wide">
-              Transaction Error
-            </div>
-            <div className="text-xs text-parchment/80">
-              {parseContractError(initiateError)}
-            </div>
-          </div>
-        )}
-
-      {finalizeError &&
-        !(
-          finalizeError.message.includes("User rejected") ||
-          finalizeError.message.includes("rejected")
-        ) && (
-          <div className="bg-vermillion/10 border border-vermillion/20 p-3 rounded">
-            <div className="text-xs font-oracle-standard font-bold text-vermillion mb-1 uppercase tracking-wide">
-              Transaction Error
-            </div>
-            <div className="text-xs text-parchment/80">
-              {parseContractError(finalizeError)}
-            </div>
-          </div>
-        )}
-
-      {(isInitiateSuccess || isFinalizeSuccess) && (
-        <div className="bg-chartreuse/10 border border-chartreuse/20 p-3 rounded">
-          <div className="text-xs font-oracle-standard font-bold text-chartreuse uppercase tracking-wide">
-            {isInitiateSuccess ? "Unstake Initiated" : "Withdrawal Finalized"}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

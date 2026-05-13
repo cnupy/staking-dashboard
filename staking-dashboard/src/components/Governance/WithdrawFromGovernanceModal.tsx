@@ -3,13 +3,14 @@ import { createPortal } from "react-dom";
 import { formatUnits, parseUnits } from "viem";
 import { useAccount } from "wagmi";
 import { Icon } from "@/components/Icon";
-import {
-  useGovernanceWithdraw,
-  useInitiateWithdrawFromGovernance,
-  type StakerVotingPower,
-} from "@/hooks/governance";
+import { type StakerVotingPower } from "@/hooks/governance";
 import { formatTokenAmount } from "@/utils/atpFormatters";
 import { useAlert } from "@/contexts/AlertContext";
+import { useTransactionCart } from "@/contexts/TransactionCartContext";
+import {
+  buildGovernanceInitiateWithdrawEntry,
+  buildGovernanceWalletInitiateWithdrawEntry,
+} from "@/utils/unstakeCart";
 
 // Withdraw source can be "wallet" (direct deposit) or an ATP (staker)
 type WithdrawSource =
@@ -26,6 +27,18 @@ interface WithdrawFromGovernanceModalProps {
   onSuccess: () => void;
 }
 
+/**
+ * Modal to queue a governance withdrawal initiation in the cart. Two source
+ * variants converge here:
+ *
+ *   - "wallet" — `Governance.initiateWithdraw(to, amount)` (direct ERC20 deposits)
+ *   - "atp"    — `Staker.initiateWithdrawFromGovernance(amount)` (ATP holders)
+ *
+ * Each is `msg.sender`-bound on contract side, so EOA wallets sign sequentially
+ * but Safe wallets batch the whole cart into a single proposal. Cart-routing
+ * keeps the user's pending action visible across page reloads via the cart's
+ * localStorage persistence.
+ */
 export function WithdrawFromGovernanceModal({
   isOpen,
   onClose,
@@ -40,29 +53,24 @@ export function WithdrawFromGovernanceModal({
   const [selectedSourceIndex, setSelectedSourceIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const { showAlert } = useAlert();
+  const { addTransaction, openCart } = useTransactionCart();
 
   // Build available sources - wallet first (if has deposits), then ATPs with deposits
   const availableSources = useMemo(() => {
     const sources: WithdrawSource[] = [];
-
-    // Add wallet source if user has direct deposits
     if (directDepositBalance > 0n) {
       sources.push({ type: "wallet", depositedAmount: directDepositBalance });
     }
-
-    // Add ATP sources with governance deposits
     for (const stakerPower of stakerPowers) {
       if (stakerPower.power > 0n) {
         sources.push({ type: "atp", stakerPower });
       }
     }
-
     return sources;
   }, [directDepositBalance, stakerPowers]);
 
   const selectedSource = availableSources[selectedSourceIndex] ?? availableSources[0];
 
-  // Get deposited amount for selected source
   const depositedBalance = useMemo(() => {
     if (!selectedSource) return 0n;
     if (selectedSource.type === "wallet") {
@@ -71,108 +79,58 @@ export function WithdrawFromGovernanceModal({
     return selectedSource.stakerPower.power;
   }, [selectedSource]);
 
-  // Hooks for withdrawal
-  const governanceWithdraw = useGovernanceWithdraw();
-  const selectedStakerAddress =
-    selectedSource?.type === "atp" ? selectedSource.stakerPower.stakerAddress : undefined;
-  const atpWithdraw = useInitiateWithdrawFromGovernance(selectedStakerAddress);
-
   const parsedAmount = parseUnits(amount || "0", decimals);
   const canWithdraw = parsedAmount > 0n && parsedAmount <= depositedBalance;
-
-  // Track previous success states to detect transitions
-  const prevSuccessRef = useRef({
-    walletWithdraw: false,
-    atpWithdraw: false,
-  });
-
-  useEffect(() => {
-    const prev = prevSuccessRef.current;
-
-    // Wallet withdrawal initiated successfully
-    if (governanceWithdraw.isSuccess && !prev.walletWithdraw) {
-      setAmount("");
-      onSuccess();
-      onClose();
-    }
-
-    // ATP withdrawal initiated successfully
-    if (atpWithdraw.isSuccess && !prev.atpWithdraw) {
-      setAmount("");
-      onSuccess();
-      onClose();
-    }
-
-    prevSuccessRef.current = {
-      walletWithdraw: governanceWithdraw.isSuccess,
-      atpWithdraw: atpWithdraw.isSuccess,
-    };
-  }, [governanceWithdraw.isSuccess, atpWithdraw.isSuccess, onSuccess, onClose]);
 
   // Reset state and focus input when modal opens
   useEffect(() => {
     if (isOpen) {
       setAmount("");
       setSelectedSourceIndex(0);
-      prevSuccessRef.current = {
-        walletWithdraw: false,
-        atpWithdraw: false,
-      };
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [isOpen]);
 
-  const handleWithdraw = async () => {
-    if (!selectedSource) return;
+  const handleAddToBatch = () => {
+    if (!selectedSource || !canWithdraw) return;
 
     try {
       if (selectedSource.type === "wallet") {
-        if (!userAddress) return;
-        await governanceWithdraw.initiateWithdraw(userAddress, parsedAmount);
+        if (!userAddress) {
+          showAlert("error", "Wallet not connected");
+          return;
+        }
+        addTransaction(
+          buildGovernanceWalletInitiateWithdrawEntry({
+            to: userAddress,
+            amount: parsedAmount,
+          }),
+          { preventDuplicate: true },
+        );
       } else {
-        await atpWithdraw.initiateWithdraw(parsedAmount);
+        addTransaction(
+          buildGovernanceInitiateWithdrawEntry({
+            stakerAddress: selectedSource.stakerPower.stakerAddress,
+            amount: parsedAmount,
+          }),
+          { preventDuplicate: true },
+        );
       }
+      setAmount("");
+      onSuccess();
+      openCart();
+      onClose();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Withdrawal failed";
+      const message = error instanceof Error ? error.message : "Failed to queue withdrawal";
       showAlert("error", message);
     }
   };
-
-  // Watch for transaction errors from hooks
-  const prevErrorRef = useRef({
-    walletWithdraw: false,
-    atpWithdraw: false,
-  });
-
-  useEffect(() => {
-    const prev = prevErrorRef.current;
-    if (governanceWithdraw.isError && !prev.walletWithdraw && governanceWithdraw.error) {
-      showAlert("error", governanceWithdraw.error.message);
-    }
-    if (atpWithdraw.isError && !prev.atpWithdraw && atpWithdraw.error) {
-      showAlert("error", atpWithdraw.error.message);
-    }
-    prevErrorRef.current = {
-      walletWithdraw: governanceWithdraw.isError,
-      atpWithdraw: atpWithdraw.isError,
-    };
-  }, [
-    governanceWithdraw.isError,
-    governanceWithdraw.error,
-    atpWithdraw.isError,
-    atpWithdraw.error,
-    showAlert,
-  ]);
-
-  const isPending = governanceWithdraw.isPending || atpWithdraw.isPending;
-  const isConfirming = governanceWithdraw.isConfirming || atpWithdraw.isConfirming;
 
   if (!isOpen) return null;
 
   return createPortal(
     <div className="fixed inset-0 backdrop-blur-xs z-50 flex items-center justify-center p-4">
       <div className="bg-ink border border-parchment/20 max-w-md w-full p-6 relative">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h3 className="font-oracle-standard text-xl text-parchment">Withdraw from Governance</h3>
           <button
@@ -184,13 +142,11 @@ export function WithdrawFromGovernanceModal({
           </button>
         </div>
 
-        {/* Info */}
         <p className="text-sm text-parchment/70 mb-4">
-          Initiate a withdrawal of your deposited tokens. After the lock period, you can finalize
-          the withdrawal to receive your tokens.
+          Queue an initiate-withdraw transaction in the batch cart. After the lock period passes you
+          can finalize the withdrawal via the Manage Withdrawals UI to receive your tokens.
         </p>
 
-        {/* Source selection dropdown */}
         {availableSources.length > 1 && (
           <div className="mb-4">
             <label className="text-xs text-parchment/50 mb-1 block">Withdraw from</label>
@@ -226,7 +182,6 @@ export function WithdrawFromGovernanceModal({
           </div>
         )}
 
-        {/* Amount input */}
         <div className="mb-4">
           <label className="text-xs text-parchment/50 mb-1 block">Amount to withdraw</label>
           <div className="flex gap-2">
@@ -247,16 +202,14 @@ export function WithdrawFromGovernanceModal({
           </div>
         </div>
 
-        {/* Action button */}
         <button
-          onClick={handleWithdraw}
-          disabled={isPending || isConfirming || !canWithdraw}
+          onClick={handleAddToBatch}
+          disabled={!canWithdraw}
           className="w-full px-4 py-3 bg-chartreuse text-ink font-oracle-standard hover:bg-chartreuse/90 disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          {isPending || isConfirming ? "Initiating Withdrawal..." : "Initiate Withdrawal"}
+          Add to Batch
         </button>
 
-        {/* Cancel */}
         <button
           onClick={onClose}
           className="w-full mt-3 px-4 py-2 text-parchment/60 hover:text-parchment text-sm"

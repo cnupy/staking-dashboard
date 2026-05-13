@@ -1,8 +1,46 @@
 import { useCallback } from "react"
 import { useWalletClient, usePublicClient } from "wagmi"
+import type { Address } from "viem"
 import type { CartTransaction, TransactionStatus } from "@/contexts/TransactionCartContext"
+import { UnstakeStepType } from "@/contexts/TransactionCartContext"
 import { isUserRejection } from "@/utils/transactionCart"
+import { parseContractError } from "@/utils/parseContractError"
 import { useAlert } from "@/contexts/AlertContext"
+
+/**
+ * Per-entry execute-time safety checks. Captures invariants that can ONLY be
+ * verified once we know which wallet is signing (we don't know that at
+ * add-to-cart time, and cart entries persist across page reloads / wallet
+ * disconnects via localStorage).
+ *
+ * Returning `{ ok: false }` causes the executor to mark the entry as failed
+ * with the supplied reason — no signature ever leaves the wallet.
+ */
+function verifyEntryBeforeSend(
+  tx: CartTransaction,
+  walletAddress: Address,
+): { ok: true } | { ok: false; reason: string } {
+  if (
+    tx.type === "unstake" &&
+    tx.metadata?.stepType === UnstakeStepType.InitiateWithdrawGovernanceWallet
+  ) {
+    // `Governance.initiateWithdraw(to, amount)` debits `msg.sender`'s
+    // governance balance and routes the eventual withdraw to `to`. If the
+    // entry was queued under wallet A and the user later executes from
+    // wallet B, B would lose funds to A. Block.
+    const queuedRecipient = tx.metadata.recipient
+    if (!queuedRecipient || queuedRecipient.toLowerCase() !== walletAddress.toLowerCase()) {
+      return {
+        ok: false,
+        reason:
+          `Recipient address baked into this entry (${queuedRecipient ?? "missing"}) ` +
+          `does not match the connected wallet (${walletAddress}). Remove this entry ` +
+          `and re-queue it from the currently connected wallet.`,
+      }
+    }
+  }
+  return { ok: true }
+}
 
 interface UseEOAExecutionProps {
   setTransactions: React.Dispatch<React.SetStateAction<CartTransaction[]>>
@@ -30,8 +68,27 @@ export function useEOAExecution({
       return
     }
 
+    const signerAddress = walletClient.account?.address
+    if (!signerAddress) {
+      showAlert("error", "Wallet account not available")
+      return
+    }
+
     for (const tx of pendingTransactions) {
       setCurrentExecutingId(tx.id)
+
+      // Per-entry execute-time safety checks (e.g. wallet-governance
+      // recipient must match the signing wallet — see comment in
+      // verifyEntryBeforeSend for the fund-routing risk this blocks).
+      const safety = verifyEntryBeforeSend(tx, signerAddress)
+      if (!safety.ok) {
+        setTransactions(prev => prev.map(t =>
+          t.id === tx.id
+            ? { ...t, status: 'failed' as TransactionStatus, error: safety.reason }
+            : t
+        ))
+        throw new Error(safety.reason)
+      }
 
       try {
         // Mark as executing
@@ -76,10 +133,13 @@ export function useEOAExecution({
           ))
           throw new Error(`User rejected transaction: "${tx.label}"`)
         } else {
-          // Mark as failed with error for actual failures
+          // Normalise known contract error selectors to plain English so the
+          // cart panel surfaces "Exit delay has not passed yet" instead of
+          // raw `0xef566ee0`. Unknown errors pass through unchanged.
+          const friendlyError = parseContractError(errorMessage)
           setTransactions(prev => prev.map(t =>
             t.id === tx.id
-              ? { ...t, status: 'failed' as TransactionStatus, error: errorMessage }
+              ? { ...t, status: 'failed' as TransactionStatus, error: friendlyError }
               : t
           ))
           throw error
@@ -87,7 +147,10 @@ export function useEOAExecution({
       }
     }
 
-    showAlert("success", "All transactions executed successfully")
+    // Note: the success toast for "all done" is fired by the dispatcher
+    // (`useTransactionExecution.executeAll`) once ALL segments succeed —
+    // not here per-segment. Otherwise a multi-segment cart would emit N
+    // identical "All transactions executed successfully" toasts.
   }, [walletClient, publicClient, setTransactions, setCurrentExecutingId, showAlert])
 
   return { executeTransactions }
