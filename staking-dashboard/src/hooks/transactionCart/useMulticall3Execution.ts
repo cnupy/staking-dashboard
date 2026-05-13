@@ -448,8 +448,7 @@ export function useMulticall3Execution({
     allTransactions: CartTransaction[],
   ): Promise<void> => {
     if (!walletClient || !publicClient) {
-      showAlert('error', 'Wallet client not ready')
-      return
+      throw new Error('Wallet client not ready')
     }
 
     // `walletClient.account` can transiently be undefined between connect
@@ -469,8 +468,7 @@ export function useMulticall3Execution({
 
     const hasExecutingTx = allTransactions.some((tx) => tx.status === 'executing' && tx.txHash)
     if (hasExecutingTx) {
-      showAlert('info', 'Please wait for the current transaction to complete')
-      return
+      throw new Error('Please wait for the current transaction to complete')
     }
 
     // Belt-and-braces guard. The dispatcher already checks eligibility — re-check here
@@ -507,17 +505,35 @@ export function useMulticall3Execution({
       const chunkLabel = chunks.length > 1 ? ` (${i + 1}/${chunks.length})` : ''
 
       // 3a. Simulate this chunk against the latest state (post-previous-chunk if any).
+      // On failure, mark every entry in the chunk `failed` with the reason and
+      // throw so the dispatcher (`runSegment` → `executeAll`) aborts. Returning
+      // silently here would let `executeAll` continue to subsequent segments
+      // and fire its terminal success toast — masking the simulation failure.
       const sim = await simulateBatch(chunk)
       if (!sim.ok) {
-        showAlert('error', `Batch simulation failed${chunkLabel}: ${sim.reason}`)
-        return
+        const reason = `Batch simulation failed${chunkLabel}: ${sim.reason}`
+        const friendlyReason = parseContractError(sim.reason)
+        setTransactions((prev) => prev.map((t) =>
+          chunk.some((p) => p.id === t.id)
+            ? { ...t, status: 'failed' as TransactionStatus, error: friendlyReason }
+            : t,
+        ))
+        showAlert('error', reason)
+        throw new Error(reason)
       }
 
       // 3b. Structural outcome verification — every inner success flag true.
+      // Same throw-not-return rationale as 3a above.
       const outcome = verifyOutcome(sim.returnData, chunk.length)
       if (!outcome.ok) {
-        showAlert('error', `Batch outcome check failed${chunkLabel}: ${outcome.reason}`)
-        return
+        const reason = `Batch outcome check failed${chunkLabel}: ${outcome.reason}`
+        setTransactions((prev) => prev.map((t) =>
+          chunk.some((p) => p.id === t.id)
+            ? { ...t, status: 'failed' as TransactionStatus, error: outcome.reason }
+            : t,
+        ))
+        showAlert('error', reason)
+        throw new Error(reason)
       }
 
       // 3c. Mark chunk entries `executing` (untouched downstream chunks stay pending).
