@@ -2,28 +2,25 @@ import styles from "./AdminTools.module.css";
 import { useState, useEffect } from "react";
 import {
   useAccount,
-  useWriteContract,
   useReadContract,
-  useWaitForTransactionReceipt,
 } from "wagmi";
 import {
-  useRegisterProvider,
   useProviderRegisteredEvents,
-  useProviderQueueLength,
 } from "../../hooks/stakingRegistry";
 import { useAtpRegistryData } from "../../hooks";
 import { contracts } from "../../contracts";
+import { useTransactionCart } from "@/contexts/TransactionCartContext";
+import {
+  buildRegisterProviderEntry,
+  buildAddKeysToProviderEntry,
+  type ProviderKeyStore,
+} from "@/utils/actionCart";
 import type { Address } from "viem";
 
 export default function AdminTools() {
   const { address } = useAccount();
+  const { addTransaction, openCart } = useTransactionCart();
 
-  const registerProviderHook = useRegisterProvider();
-
-  const addKeysHook = useWriteContract();
-  const addKeysReceipt = useWaitForTransactionReceipt({
-    hash: addKeysHook.data,
-  });
   const [selectedProviderId, setSelectedProviderId] = useState<number>(1);
 
   const { executeAllowedAt } = useAtpRegistryData();
@@ -34,9 +31,8 @@ export default function AdminTools() {
     address: contracts.atpRegistry.address,
     functionName: "owner",
   });
-  const { hasRegisteredProviders, providerCount, events, refetchEvents } =
+  const { hasRegisteredProviders, providerCount, events } =
     useProviderRegisteredEvents();
-  const { refetchQueueLength } = useProviderQueueLength(selectedProviderId);
 
   // Console log the ATPRegistry owner when it changes
   useEffect(() => {
@@ -75,46 +71,15 @@ export default function AdminTools() {
       console.error("No address is connected thus can't set providerAdmin");
       return;
     }
-    try {
-      registerProviderHook.registerProvider(address);
-    } catch (error) {
-      console.log("Failed to register provider", error);
-    }
+    addTransaction(
+      buildRegisterProviderEntry({ providerAdmin: address }),
+      { preventDuplicate: true },
+    );
+    openCart();
   };
 
-  useEffect(() => {
-    if (registerProviderHook.isSuccess) {
-      refetchEvents();
-    }
-  }, [registerProviderHook.isSuccess, refetchEvents]);
-
-  useEffect(() => {
-    if (addKeysHook.data) {
-      console.log("Keys added to provider - Transaction hash:", addKeysHook.data);
-    }
-    if (addKeysReceipt.isSuccess) {
-      console.log("Keys added to provider - Transaction confirmed on-chain");
-      // Refetch queue length when key is successfully confirmed
-      refetchQueueLength();
-    }
-    if (addKeysHook.isError || addKeysReceipt.isError) {
-      console.log(
-        "Keys added to provider - Transaction failed:",
-        addKeysHook.error || addKeysReceipt.error,
-      );
-    }
-  }, [
-    addKeysHook.data,
-    addKeysReceipt.isSuccess,
-    addKeysHook.isError,
-    addKeysReceipt.isError,
-    addKeysHook.error,
-    addKeysReceipt.error,
-    refetchQueueLength,
-  ]);
-
   // Generate fake keystore like in tests
-  const makeKeyStore = (attesterAddress: Address) => {
+  const makeKeyStore = (attesterAddress: Address): ProviderKeyStore => {
     return {
       attester: attesterAddress,
       publicKeyG1: {
@@ -134,28 +99,20 @@ export default function AdminTools() {
     };
   };
 
-  const handleAddKeysToProvider = async () => {
-    try {
-      // Generate a fake attester address based on provider ID
-      const fakeAttester =
-        `0x${selectedProviderId.toString().padStart(40, "0")}` as `0x${string}`;
-      const keyStore = makeKeyStore(fakeAttester);
+  const handleAddKeysToProvider = () => {
+    // Generate a fake attester address based on provider ID
+    const fakeAttester =
+      `0x${selectedProviderId.toString().padStart(40, "0")}` as `0x${string}`;
+    const keyStore = makeKeyStore(fakeAttester);
 
-      console.log(`Adding keys to provider ${selectedProviderId}:`, {
+    addTransaction(
+      buildAddKeysToProviderEntry({
         providerId: selectedProviderId,
-        attester: fakeAttester,
-        keyStore,
-      });
-
-      addKeysHook.writeContract({
-        abi: contracts.stakingRegistry.abi,
-        address: contracts.stakingRegistry.address,
-        functionName: "addKeysToProvider",
-        args: [BigInt(selectedProviderId), [keyStore]],
-      });
-    } catch (error) {
-      console.error("Failed to add keys to provider:", error);
-    }
+        keyStores: [keyStore],
+      }),
+      { preventDuplicate: true },
+    );
+    openCart();
   };
 
   return (
@@ -183,23 +140,15 @@ export default function AdminTools() {
       </div>
 
       <button
-        className={`${styles.adminButton} ${
-          styles.registerProviderBtn
-        } ${registerProviderHook.isPending || registerProviderHook.isConfirming ? styles.pending : ""}`}
+        className={`${styles.adminButton} ${styles.registerProviderBtn}`}
         onClick={handleRegisterProvider}
-        disabled={
-          registerProviderHook.isPending || registerProviderHook.isConfirming
-        }
         title={
           !hasRegisteredProviders
             ? `No providers registered yet (count: ${providerCount})`
             : `${providerCount} provider(s) registered`
         }
       >
-        {registerProviderHook.isPending || registerProviderHook.isConfirming
-          ? "waiting..."
-          : "Register New Mock Provider"}{" "}
-        <br />
+        Register New Mock Provider <br />
         <span className={styles.smallText}>
           Registered IDs: {formatProviderIds()}
         </span>
@@ -232,22 +181,10 @@ export default function AdminTools() {
           <button
             className={`${styles.adminButton} ${styles.addKeyButton}`}
             onClick={handleAddKeysToProvider}
-            disabled={addKeysHook.isPending || addKeysReceipt.isLoading}
           >
-            {addKeysHook.isPending || addKeysReceipt.isLoading ? "..." : "Add"}
+            Add
           </button>
         </div>
-        {/* {addKeysHook.isSuccess && (
-          <div className={styles.successMessage}>
-            Keys added to Provider {selectedProviderId}
-          </div>
-        )} */}
-        {(addKeysHook.isError || addKeysReceipt.isError) && (
-          <div className={styles.errorMessage}>
-            Failed to add keys:{" "}
-            {addKeysHook.error?.message || addKeysReceipt.error?.message}
-          </div>
-        )}
       </div>
     </div>
   );

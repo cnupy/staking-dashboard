@@ -1,7 +1,7 @@
 import type { Address } from "viem"
 import { ATPStakingStepsWithTransaction } from "./ATPStakingStepsContext"
 
-export type TransactionType = "delegation" | "self-stake" | "setup" | "wallet-delegation" | "wallet-direct-stake" | "claim" | "unstake"
+export type TransactionType = "delegation" | "self-stake" | "setup" | "wallet-delegation" | "wallet-direct-stake" | "claim" | "unstake" | "action"
 
 /**
  * Step type for claim flows. String values so they can't collide with
@@ -132,6 +132,48 @@ export interface ClaimMetadata extends BaseMetadata<ClaimStepType> {
   amount?: bigint
 }
 
+/**
+ * Step type for miscellaneous on-chain actions that don't fit the
+ * stake/claim/unstake taxonomy — operator vault management, admin tools, etc.
+ * Like the unstake path, these are `msg.sender`-bound so they cannot batch via
+ * Multicall3 on EOA wallets; they ride the cart purely for unified UX and Safe
+ * multisig batching.
+ */
+export enum ActionStepType {
+  /** `ATPNonWithdrawableStaker.moveFundsBackToATP()` — operator moves staker
+   *  contract balance back to its ATP. */
+  MoveFundsBackToATP = "action:move-funds-back",
+  /** `StakingRegistry.registerProvider(admin, count, recipient)` — admin tool. */
+  RegisterProvider = "action:register-provider",
+  /** `StakingRegistry.addKeysToProvider(providerId, keyStores)` — admin tool. */
+  AddKeysToProvider = "action:add-keys",
+  /** `ATP.updateStakerOperator(operator)` — operator-management action. */
+  UpdateStakerOperator = "action:update-operator",
+  /** `ATP.upgradeStaker(version)` — operator-management action. */
+  UpgradeStaker = "action:upgrade-staker",
+}
+
+export const ActionStepTypeName: Record<ActionStepType, string> = {
+  [ActionStepType.MoveFundsBackToATP]: "Move Funds to Vault",
+  [ActionStepType.RegisterProvider]: "Register Provider",
+  [ActionStepType.AddKeysToProvider]: "Add Keys to Provider",
+  [ActionStepType.UpdateStakerOperator]: "Update Operator",
+  [ActionStepType.UpgradeStaker]: "Upgrade Staker",
+}
+
+export interface ActionMetadata extends BaseMetadata<ActionStepType> {
+  /** Target contract for the action (staker / registry / etc.) — for display. */
+  contractAddress?: Address
+  /** Display-only ATP address for move-funds / upgrade / operator entries. */
+  atpAddress?: Address
+  /** Provider identifier for admin add-keys / register flows. */
+  providerId?: number
+  /** Operator address for update-operator entries. */
+  operatorAddress?: Address
+  /** Staker version for upgrade-staker entries. */
+  version?: bigint
+}
+
 export interface UnstakeMetadata extends BaseMetadata<UnstakeStepType> {
   /** Which validator / attester the unstake targets. Always captured at
    *  add-time so the cart entry's calldata is deterministic and doesn't
@@ -185,6 +227,7 @@ export type CartTransaction =
   | BaseCartItem<"wallet-direct-stake", WalletDirectStakeMetadata>
   | BaseCartItem<"claim", ClaimMetadata>
   | BaseCartItem<"unstake", UnstakeMetadata>
+  | BaseCartItem<"action", ActionMetadata>
 
 export interface AddTransactionOptions {
   preventDuplicate?: boolean

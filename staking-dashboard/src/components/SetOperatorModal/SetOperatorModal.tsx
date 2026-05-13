@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { Address } from "viem";
 import { useAccount } from "wagmi";
 import { formatEther } from "viem";
 import StepSetOperator from "../StepSetOperator/StepSetOperator";
 import type { MATPData } from "../../hooks/atp/matp";
-import { useUpdateStakerOperator } from "../../hooks/atp/useUpdateStakerOperator";
+import { useTransactionCart } from "@/contexts/TransactionCartContext";
+import { buildUpdateStakerOperatorEntry } from "@/utils/actionCart";
 import { formatAddress } from "../../utils/formatAddress";
 import styles from "./SetOperatorModal.module.css";
 
@@ -22,34 +23,7 @@ export default function SetOperatorModal({
 }: SetOperatorModalProps) {
   const { address } = useAccount();
   const [isCompleted, setIsCompleted] = useState(false);
-
-  // Initialize the updateStakerOperator hook
-  const updateOperatorHook = useUpdateStakerOperator(
-    atp?.atpAddress as Address,
-  );
-
-  // Monitor transaction states
-  useEffect(() => {
-    if (updateOperatorHook.isSuccess) {
-      console.log("✅ Set operator transaction successful!");
-      console.log("Transaction Hash:", updateOperatorHook.txHash);
-      console.log("Transaction Status: success");
-      setIsCompleted(true);
-    } else if (updateOperatorHook.error) {
-      console.error("❌ Set operator transaction failed:");
-      console.error("Error:", updateOperatorHook.error.message);
-    }
-  }, [
-    updateOperatorHook.isSuccess,
-    updateOperatorHook.error,
-    updateOperatorHook.txHash,
-  ]);
-
-  useEffect(() => {
-    if (updateOperatorHook.isPending) {
-      console.log("⏳ Set operator transaction is pending...");
-    }
-  }, [updateOperatorHook.isPending]);
+  const { addTransaction, openCart } = useTransactionCart();
 
   const getTypeName = (atp: MATPData) => {
     switch (atp.type) {
@@ -64,22 +38,18 @@ export default function SetOperatorModal({
 
   if (!isOpen || !atp) return null;
 
-  const handleSetOperator = async (operatorAddress: Address) => {
+  const handleSetOperator = (operatorAddress: Address) => {
     if (!address || !atp) return;
 
-    try {
-      console.log(
-        "Sending updateStakerOperator transaction with operator:",
-        operatorAddress,
-      );
-
-      // Call the real updateStakerOperator function
-      updateOperatorHook.updateStakerOperator(operatorAddress);
-
-      // Transaction state monitoring is handled in useEffect hooks
-    } catch (error) {
-      console.error("❌ Error setting operator:", error);
-    }
+    addTransaction(
+      buildUpdateStakerOperatorEntry({
+        atpAddress: atp.atpAddress as Address,
+        operator: operatorAddress,
+      }),
+      { preventDuplicate: true },
+    );
+    setIsCompleted(true);
+    openCart();
   };
 
   const handleClose = () => {
@@ -164,8 +134,7 @@ export default function SetOperatorModal({
             <StepSetOperator
               beneficiary={address}
               currentOperator={atp.operator as Address}
-              isLoading={updateOperatorHook.isPending}
-              error={updateOperatorHook.error?.message}
+              isLoading={false}
               isCompleted={isCompleted}
               canExecute={!!address}
               onSetOperator={handleSetOperator}
@@ -173,7 +142,7 @@ export default function SetOperatorModal({
 
             {isCompleted && (
               <div className={styles.successMessage}>
-                Operator successfully set! You can now close this modal.
+                Operator queued in batch. Open the cart to execute.
               </div>
             )}
           </div>

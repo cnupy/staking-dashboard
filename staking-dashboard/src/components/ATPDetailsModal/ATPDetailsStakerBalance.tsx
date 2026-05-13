@@ -1,46 +1,45 @@
-import { useEffect } from "react"
 import { useAccount } from "wagmi"
 import { formatTokenAmount } from "@/utils/atpFormatters"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
-import { useStakerBalance, useMoveFundsBackToATP } from "@/hooks/staker"
+import { useStakerBalance } from "@/hooks/staker"
 import { TooltipIcon } from "@/components/Tooltip"
-import { useStakeableAmount, type ATPData } from "@/hooks"
-import { useQueryClient } from "@tanstack/react-query"
+import { Icon } from "@/components/Icon"
+import { type ATPData } from "@/hooks"
+import { useTransactionCart } from "@/contexts/TransactionCartContext"
+import { buildMoveFundsBackToATPEntry } from "@/utils/actionCart"
 
 interface ATPDetailsStakerBalanceProps {
   atp: ATPData
 }
 
 /**
- * Displays staker contract balance and provides button to move funds back to ATP
- * Only the operator can move funds back to vault
- * Compact inline layout
+ * Displays staker contract balance and a button to queue a move-funds-back-to-ATP
+ * transaction in the cart. Only the operator can submit it on-chain.
+ *
+ * Compact inline layout.
  */
 export const ATPDetailsStakerBalance = ({ atp }: ATPDetailsStakerBalanceProps) => {
   const { address: connectedAddress } = useAccount()
-  const { balance, isLoading: isLoadingBalance, refetch } = useStakerBalance({ stakerAddress: atp.staker })
+  const { balance, isLoading: isLoadingBalance } = useStakerBalance({ stakerAddress: atp.staker })
   const { symbol, decimals, isLoading: isLoadingTokenDetails } = useStakingAssetTokenDetails()
-  const { moveFunds, isPending, isConfirming, isSuccess } = useMoveFundsBackToATP(atp.staker!)
-  const { refetch: refetchStakeableAmount } = useStakeableAmount(atp)
-  const queryClient = useQueryClient()
+  const { addTransaction, checkStepGroupInQueue, openCart } = useTransactionCart()
 
   const isLoading = isLoadingBalance || isLoadingTokenDetails
-  const isProcessing = isPending || isConfirming
   const hasBalance = balance > 0n
   const isOperator = connectedAddress?.toLowerCase() === atp.operator?.toLowerCase()
 
-  // Refetch balance after successful move
-  useEffect(() => {
-    if (isSuccess) {
-      refetch()
-      refetchStakeableAmount()
+  const entry = atp.staker
+    ? buildMoveFundsBackToATPEntry({ stakerAddress: atp.staker, atpAddress: atp.atpAddress })
+    : undefined
 
-      // Invalidate multiple stakeable amounts and refetch
-      queryClient.invalidateQueries({
-        queryKey: ['readContracts']
-      })
-    }
-  }, [isSuccess, refetch])
+  const isQueued = !!entry && !!entry.metadata?.stepType && !!entry.metadata?.stepGroupIdentifier &&
+    checkStepGroupInQueue(entry.metadata.stepType, entry.metadata.stepGroupIdentifier)
+
+  const handleAddToBatch = () => {
+    if (!entry) return
+    addTransaction(entry, { preventDuplicate: true })
+    openCart()
+  }
 
   return (
     <div className="bg-parchment/5 border border-parchment/20 p-3 flex items-center justify-between">
@@ -59,13 +58,24 @@ export const ATPDetailsStakerBalance = ({ atp }: ATPDetailsStakerBalanceProps) =
       </div>
       {hasBalance && (
         <div className="flex items-center gap-2">
-          <button
-            onClick={moveFunds}
-            disabled={isProcessing || !isOperator}
-            className="px-3 py-1.5 bg-chartreuse text-ink font-oracle-standard text-xs uppercase tracking-wider hover:bg-chartreuse/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {isPending ? 'Moving...' : isConfirming ? 'Confirming...' : 'Move to Vault'}
-          </button>
+          {isQueued ? (
+            <button
+              onClick={openCart}
+              disabled={!isOperator}
+              className="px-3 py-1.5 bg-chartreuse/20 border border-chartreuse/40 text-chartreuse font-oracle-standard text-xs uppercase tracking-wider hover:bg-chartreuse/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            >
+              <Icon name="shoppingCart" size="sm" />
+              In Batch
+            </button>
+          ) : (
+            <button
+              onClick={handleAddToBatch}
+              disabled={!isOperator || !entry}
+              className="px-3 py-1.5 bg-chartreuse text-ink font-oracle-standard text-xs uppercase tracking-wider hover:bg-chartreuse/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Add to Batch
+            </button>
+          )}
           {!isOperator && (
             <TooltipIcon
               content="Only the operator can move funds to vault"

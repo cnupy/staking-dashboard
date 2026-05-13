@@ -14,13 +14,14 @@ import type {
   WalletDirectStakeMetadata,
   ClaimMetadata,
   UnstakeMetadata,
+  ActionMetadata,
   RawTransaction,
   TransactionStatus,
   CartTransaction,
   AddTransactionOptions,
   TransactionCartContextType
 } from "./TransactionCartContextType"
-import { ClaimStepType, ClaimStepTypeName, UnstakeStepType, UnstakeStepTypeName } from "./TransactionCartContextType"
+import { ClaimStepType, ClaimStepTypeName, UnstakeStepType, UnstakeStepTypeName, ActionStepType, ActionStepTypeName } from "./TransactionCartContextType"
 
 // Re-export types for backwards compatibility
 export type {
@@ -30,13 +31,14 @@ export type {
   WalletDirectStakeMetadata,
   ClaimMetadata,
   UnstakeMetadata,
+  ActionMetadata,
   RawTransaction,
   TransactionStatus,
   CartTransaction,
   AddTransactionOptions
 }
 
-export { ClaimStepType, ClaimStepTypeName, UnstakeStepType, UnstakeStepTypeName }
+export { ClaimStepType, ClaimStepTypeName, UnstakeStepType, UnstakeStepTypeName, ActionStepType, ActionStepTypeName }
 
 const TransactionCartContext = createContext<TransactionCartContextType | undefined>(undefined)
 

@@ -1,6 +1,6 @@
 import { useCallback } from "react"
 import { useWalletClient, usePublicClient } from "wagmi"
-import { encodeFunctionData, type Address, type Hex } from "viem"
+import { encodeFunctionData, type Hex } from "viem"
 import type { CartTransaction, TransactionStatus } from "@/contexts/TransactionCartContext"
 import { Multicall3Abi, MULTICALL3_ADDRESS } from "@/contracts/abis/Multicall3"
 import { isUserRejection } from "@/utils/transactionCart"

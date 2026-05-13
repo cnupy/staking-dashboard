@@ -1,4 +1,3 @@
-export * from "./useRegisterProvider";
 export * from "./useProviderRegisteredEvents";
 export * from "./useStakingRegistryData";
 export * from "./useProviderQueueLength";
