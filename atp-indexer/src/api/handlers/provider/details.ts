@@ -14,7 +14,8 @@ import {
   erc20StakedWithProvider,
   providerTakeRateUpdate,
   staked,
-  failedDeposit
+  failedDeposit,
+  atpPosition
 } from 'ponder:schema';
 
 /**
@@ -42,9 +43,18 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
 
     const providerRecord = providerData[0];
 
-    // Get provider stakes (ATP and ERC20) and take rate history
-    const [atpDelegations, erc20Delegations, takeRateHistory] = await Promise.all([
-      db.select().from(stakedWithProvider)
+    // Get provider stakes (ATP and ERC20) and take rate history. ATP rows are
+    // LEFT-joined with `atpPosition` so we can expose the ATP beneficiary —
+    // the delegator-side recipient baked into the split contract — directly
+    // in the response. Without that join the operator-side commission flow
+    // can't rebuild `splitData` to call `Split.distribute`.
+    const [atpDelegationsRaw, erc20Delegations, takeRateHistory] = await Promise.all([
+      db.select({
+          row: stakedWithProvider,
+          beneficiary: atpPosition.beneficiary,
+        })
+        .from(stakedWithProvider)
+        .leftJoin(atpPosition, eq(stakedWithProvider.atpAddress, atpPosition.address))
         .where(eq(stakedWithProvider.providerIdentifier, id))
         .orderBy(desc(stakedWithProvider.blockNumber), desc(stakedWithProvider.logIndex)),
       db.select().from(erc20StakedWithProvider)
@@ -55,10 +65,15 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
         .orderBy(desc(providerTakeRateUpdate.timestamp))
     ]);
 
-    // Combine ATP and ERC20 delegations
+    const atpDelegations = atpDelegationsRaw.map(r => ({ ...r.row, beneficiary: r.beneficiary }));
+
+    // Combine ATP and ERC20 delegations. The `beneficiary` we attach here is
+    // the address baked into the split contract:
+    //   - ATP delegations  → joined from `atpPosition.beneficiary`
+    //   - ERC20 delegations → the staker's wallet (= `stakerAddress`)
     const allDelegations = [
       ...atpDelegations.map(d => ({ ...d, _source: 'atp' as const })),
-      ...erc20Delegations.map(d => ({ ...d, _source: 'erc20' as const }))
+      ...erc20Delegations.map(d => ({ ...d, _source: 'erc20' as const, beneficiary: d.stakerAddress }))
     ];
 
     // Build attester-withdrawer pairs from all delegations
@@ -136,6 +151,10 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
         // ATP delegations have atpAddress, ERC20 delegations don't
         ...(stake._source === 'atp' && 'atpAddress' in stake && { atpAddress: checksumAddress(stake.atpAddress) }),
         stakerAddress: checksumAddress(stake.stakerAddress),
+        // Delegator-side recipient on the split contract — required to
+        // rebuild splitData for `Split.distribute`. Nullable defensively in
+        // case the ATP row couldn't be joined.
+        beneficiary: stake.beneficiary ? checksumAddress(stake.beneficiary) : null,
         splitContractAddress: checksumAddress(stake.splitContractAddress),
         rollupAddress: checksumAddress(stake.rollupAddress),
         attesterAddress: checksumAddress(stake.attesterAddress),

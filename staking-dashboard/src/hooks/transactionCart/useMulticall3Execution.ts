@@ -31,16 +31,13 @@ interface UseMulticall3ExecutionProps {
   setCurrentExecutingId: React.Dispatch<React.SetStateAction<string | null>>
 }
 
-/**
- * Hard upper bound on the number of inner calls we'll consider for batching
- * in a SINGLE multicall before chunking. Acts as a sanity bound on cart size;
- * the actual per-tx size is gas-driven (see `BLOCK_GAS_FRACTION` below).
- *
- * Bumped from 64 to 256 to accommodate operator-side carts where one operator
- * may aggregate dozens of delegators × multiple rollups; the gas-aware chunker
- * splits the work safely regardless.
- */
-const MAX_BATCH_SIZE = 256
+// Previously we enforced a hard cap of 256 inner calls per cart for batching.
+// That cap kept rejecting legitimate operator-side carts (one operator × many
+// delegators × multiple rollups easily produces >256 entries). The gas-aware
+// chunker (`chunkByGasLimit`) already splits a large input into multiple
+// signatures sized against the live block gas limit, so the upstream cap was
+// the wrong place to enforce sanity — it tripped before the chunker ever ran.
+// The cap is intentionally removed; see `chunkByGasLimit` for the real bound.
 
 /**
  * Fraction of the chain's current block gas limit we're willing to fill in a
@@ -83,13 +80,14 @@ export function isEntryMulticall3Eligible(tx: CartTransaction): boolean {
  *
  *   1. Every entry must pass `isEntryMulticall3Eligible`.
  *   2. Batch size > 1 (single-entry carts don't benefit from wrapping).
- *   3. Batch size <= MAX_BATCH_SIZE (defensive bound; the gas-aware chunker
- *      handles real sizing, but capping here prevents pathological carts
- *      from queuing endless RPC estimations).
+ *
+ * There is no upper bound here on purpose — `chunkByGasLimit` splits an
+ * over-large batch into multiple signatures sized against the live block
+ * gas limit. Capping here would (and did) prevent legitimate operator-side
+ * carts of 250+ entries from batching at all.
  */
 export function isMulticall3Eligible(pendingTransactions: CartTransaction[]): boolean {
   if (pendingTransactions.length <= 1) return false
-  if (pendingTransactions.length > MAX_BATCH_SIZE) return false
   return pendingTransactions.every(isEntryMulticall3Eligible)
 }
 

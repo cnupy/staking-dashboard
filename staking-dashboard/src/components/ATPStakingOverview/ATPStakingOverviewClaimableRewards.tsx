@@ -63,7 +63,15 @@ export const ATPStakingOverviewClaimableRewards = forwardRef<HTMLDivElement, ATP
 
           {isExpanded && (
             <div className="absolute top-full left-0 right-0 mt-2 bg-ink border border-parchment/20 p-4 z-10 shadow-lg">
-              {/* Delegation Rewards Section */}
+              {/* Delegation Rewards Section — breaks the total into the two
+                  states delegation rewards can sit in:
+                    • pending distribute — the user's share of (rollup +
+                      on-split) that still needs `Split.distribute` to be
+                      called before it lands in the warehouse.
+                    • already in warehouse — already distributed and waiting
+                      on a `withdraw` call.
+                  Same breakdown the operator page surfaces; helps users see
+                  exactly which step they're on. */}
               <div>
                 <div className="text-xs text-parchment/60 uppercase tracking-wide mb-1 font-oracle-standard">Delegation Rewards</div>
                 <div className="font-mono text-base font-bold text-parchment">
@@ -72,6 +80,40 @@ export const ATPStakingOverviewClaimableRewards = forwardRef<HTMLDivElement, ATP
                 <div className="text-xs text-parchment/50 mt-1">
                   Earned from staking through providers
                 </div>
+                {totalRewards > 0n && (
+                  <div className="mt-3 grid grid-cols-2 gap-3 pt-3 border-t border-parchment/10">
+                    <div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-parchment/50 uppercase tracking-wide font-oracle-standard">
+                          Pending distribute
+                        </span>
+                        <TooltipIcon
+                          content="Your share that still needs the split contract's distribute step to be called. Counts both unclaimed rollup rewards and tokens already pulled to the split contract."
+                          size="sm"
+                          maxWidth="max-w-xs"
+                        />
+                      </div>
+                      <div className="font-mono text-sm font-bold text-parchment">
+                        {formatTokenAmount(totalRewards - pendingWarehouseWithdrawal, decimals, symbol)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-parchment/50 uppercase tracking-wide font-oracle-standard">
+                          Already in warehouse
+                        </span>
+                        <TooltipIcon
+                          content="Tokens already distributed to your address in the SplitsWarehouse. A single withdraw call sweeps the entire balance to your wallet."
+                          size="sm"
+                          maxWidth="max-w-xs"
+                        />
+                      </div>
+                      <div className="font-mono text-sm font-bold text-parchment">
+                        {formatTokenAmount(pendingWarehouseWithdrawal, decimals, symbol)}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Self-Stake Rewards Section */}
