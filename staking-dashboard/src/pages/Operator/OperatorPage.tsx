@@ -4,6 +4,7 @@ import { type Address } from "viem"
 import { PageHeader } from "@/components/PageHeader"
 import { Icon } from "@/components/Icon"
 import { CopyButton } from "@/components/CopyButton"
+import { TooltipIcon } from "@/components/Tooltip"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import {
@@ -47,7 +48,14 @@ import type { CoinbaseBreakdown } from "@/hooks/rewards/rewardsTypes"
  */
 export default function OperatorPage() {
   const { address } = useAccount()
-  const { all, asAdmin, asRecipient, isLoading: isLoadingIdentities } = useConnectedOperatorIdentities()
+  const {
+    all,
+    asAdmin,
+    asRecipient,
+    isLoading: isLoadingIdentities,
+    hasError: identitiesError,
+    refetch: refetchIdentities,
+  } = useConnectedOperatorIdentities()
   const { symbol, decimals, stakingAssetAddress: tokenAddress } = useStakingAssetTokenDetails()
   const { isRewardsClaimable } = useIsRewardsClaimable()
   // Cosmetic filter — historical delegations are kept in the underlying data
@@ -57,7 +65,22 @@ export default function OperatorPage() {
   const [hideEmptySplits, setHideEmptySplits] = useState(true)
 
   // Splits paying any of our identities (one row per delegator × provider).
-  const { splitContracts, isLoading: isLoadingSplits } = useOperatorSplitContracts(all)
+  const {
+    splitContracts,
+    isLoading: isLoadingSplits,
+    hasErrors: splitsHaveErrors,
+    refetch: refetchSplits,
+  } = useOperatorSplitContracts(all)
+
+  const indexerError = identitiesError || splitsHaveErrors
+  // Fire-and-forget: refetch outcomes propagate through `hasError`/`hasErrors`
+  // on the next render. We `void` the combined promise rather than awaiting
+  // (the click handler is synchronous) and add a no-op `.catch` so a
+  // rejection — should both refetches' retry budgets exhaust — doesn't
+  // surface as an unhandled-rejection in tooling.
+  const retryIndexer = () => {
+    void Promise.all([refetchIdentities(), refetchSplits()]).catch(() => {})
+  }
 
   const splitAddresses = useMemo(
     () => splitContracts.map((s) => s.splitContract),
@@ -114,6 +137,20 @@ export default function OperatorPage() {
         asRecipient={asRecipient}
         isLoading={isLoadingIdentities}
       />
+
+      {indexerError && (
+        <div className="mb-4 px-4 py-3 bg-vermillion/10 border border-vermillion/30 text-vermillion text-sm flex items-center justify-between gap-3 flex-wrap">
+          <span>
+            Indexer request failed. The list below may be incomplete or out of date — totals computed from on-chain reads are still accurate for whichever splits did load.
+          </span>
+          <button
+            onClick={retryIndexer}
+            className="px-3 py-1.5 border border-vermillion/40 text-vermillion font-oracle-standard text-xs uppercase tracking-wider hover:bg-vermillion/10 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {!isRewardsClaimable && (
         <div className="mb-4 px-4 py-3 bg-vermillion/10 border border-vermillion/30 text-vermillion text-sm">
@@ -270,24 +307,45 @@ function TotalsCard({ totals, decimals, symbol, canBatch, onAddAll }: TotalsCard
     <div className="mb-6 p-4 bg-chartreuse/5 border border-chartreuse/30 flex items-center justify-between gap-4 flex-wrap">
       <div className="flex flex-wrap gap-x-8 gap-y-3">
         <div>
-          <div className="text-xs text-parchment/60 uppercase tracking-wide mb-1">
-            Total commission
+          <div className="flex items-center gap-1 mb-1">
+            <span className="text-xs text-parchment/60 uppercase tracking-wide">
+              Total ready to claim
+            </span>
+            <TooltipIcon
+              content="Sum of pending-distribute (operator's share of unclaimed rewards on rollups and split contracts) and the SplitsWarehouse balance owned by this operator's providerRewardsRecipient. If the recipient address is also used by a delegation you participate in, that delegation's commission would be included here as well — the warehouse is keyed by recipient + token, not by role."
+              size="sm"
+              maxWidth="max-w-md"
+            />
           </div>
           <div className="font-mono text-2xl font-bold text-chartreuse">
             {formatTokenAmountFull(totals.total, decimals, symbol)}
           </div>
         </div>
         <div>
-          <div className="text-xs text-parchment/60 uppercase tracking-wide mb-1">
-            Pending distribute
+          <div className="flex items-center gap-1 mb-1">
+            <span className="text-xs text-parchment/60 uppercase tracking-wide">
+              Pending distribute
+            </span>
+            <TooltipIcon
+              content="Operator's share of (unclaimed rollup rewards + ERC20 sitting on split contracts), computed at the configured take rate. These tokens still need a `Split.distribute` call to move into the warehouse."
+              size="sm"
+              maxWidth="max-w-md"
+            />
           </div>
           <div className="font-mono text-lg text-parchment">
             {formatTokenAmountFull(totals.pendingDistribute, decimals, symbol)}
           </div>
         </div>
         <div>
-          <div className="text-xs text-parchment/60 uppercase tracking-wide mb-1">
-            Already in warehouse
+          <div className="flex items-center gap-1 mb-1">
+            <span className="text-xs text-parchment/60 uppercase tracking-wide">
+              Already in warehouse
+            </span>
+            <TooltipIcon
+              content="SplitsWarehouse balance owned by this operator's providerRewardsRecipient. Already distributed; a single `withdraw` call sweeps it to the recipient's wallet."
+              size="sm"
+              maxWidth="max-w-md"
+            />
           </div>
           <div className="font-mono text-lg text-parchment">
             {formatTokenAmountFull(totals.inWarehouse, decimals, symbol)}

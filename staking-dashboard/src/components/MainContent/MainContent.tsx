@@ -19,8 +19,12 @@ export const MainContent = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [animateContent, setAnimateContent] = useState(false)
 
-  const { all: operatorIdentities, isLoading: isLoadingOperator } = useConnectedOperatorIdentities()
-  const isOperator = !isLoadingOperator && operatorIdentities.length > 0
+  const { all: operatorIdentities, isLoading: isLoadingOperator, hasError: operatorDetectionError } = useConnectedOperatorIdentities()
+  // When the indexer query fails we can't prove they aren't an operator. Show
+  // the tab in that uncertain state so a real operator isn't locked out of
+  // the page (where they can retry). False positives for non-operators are
+  // fine — they'll see the error banner explaining why the list is empty.
+  const isOperator = !isLoadingOperator && (operatorIdentities.length > 0 || operatorDetectionError)
 
   const getActiveTab = () => {
     if (location.pathname === "/" || location.pathname === "/my-position") return "my-position"

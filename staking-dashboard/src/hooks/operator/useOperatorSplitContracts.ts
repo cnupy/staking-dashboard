@@ -87,7 +87,21 @@ export function useOperatorSplitContracts(identities: OperatorIdentity[]) {
   })
 
   const isLoading = queries.some((q) => q.isLoading)
-  const errors = queries.map((q) => q.error).filter(Boolean)
+  const errors = queries.map((q) => q.error).filter((e): e is Error => e !== null)
+  const hasErrors = errors.length > 0
+  const refetch = () => Promise.all(queries.map((q) => q.refetch()))
+
+  // `queries` is a fresh array reference on every render even when the
+  // underlying TanStack Query state hasn't changed — depending on it
+  // directly invalidates the memo every render, cascading through
+  // splitContracts → splitAddresses → distinctRecipients → useOperatorOnChainReads
+  // and rebuilding contractsArg / re-running its `useMemo` chain on every
+  // render. We collapse the meaningful inputs into a primitive `dataKey`
+  // built from each query's `dataUpdatedAt` timestamp; that string only
+  // changes when the data underneath actually changes, so the memo (and
+  // every downstream memo that depends on splitContracts) gets a stable
+  // reference until something real updates.
+  const dataKey = queries.map((q) => q.dataUpdatedAt ?? 0).join(",")
 
   const splitContracts = useMemo<OperatorSplitContract[]>(() => {
     const out: OperatorSplitContract[] = []
@@ -155,7 +169,11 @@ export function useOperatorSplitContracts(identities: OperatorIdentity[]) {
       }
     }
     return out
-  }, [identities, queries])
+    // `queries` is accessed inside the closure but intentionally excluded
+    // from the dep list: `dataKey` already captures whether anything
+    // meaningful changed. See the comment above its declaration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identities, dataKey])
 
-  return { splitContracts, isLoading, errors }
+  return { splitContracts, isLoading, hasErrors, errors, refetch }
 }

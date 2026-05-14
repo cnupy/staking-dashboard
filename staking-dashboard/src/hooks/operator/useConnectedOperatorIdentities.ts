@@ -20,6 +20,15 @@ interface UseConnectedOperatorIdentitiesResult {
   /** Union of the two — any provider id the wallet has an operator-side role for. */
   all: OperatorIdentity[]
   isLoading: boolean
+  /** True when EITHER the indexer providers list OR the on-chain configs read
+   *  failed. Callers should treat an empty `all` paired with `hasError = true`
+   *  as "unknown" rather than "definitely not an operator". */
+  hasError: boolean
+  /** Manual retry hook for the underlying queries. Settles when both the
+   *  indexer query and the on-chain configs read have re-attempted. Errors
+   *  are surfaced via `hasError` on the next render, so callers can
+   *  fire-and-forget the returned promise. */
+  refetch: () => Promise<void>
 }
 
 interface ApiProviderListItem {
@@ -57,7 +66,12 @@ async function fetchAllProviders(): Promise<ApiProviderListItem[]> {
 export function useConnectedOperatorIdentities(): UseConnectedOperatorIdentitiesResult {
   const { address } = useAccount()
 
-  const { data: providersList, isLoading: isLoadingProviders } = useQuery({
+  const {
+    data: providersList,
+    isLoading: isLoadingProviders,
+    isError: providersError,
+    refetch: refetchProviders,
+  } = useQuery({
     queryKey: ["operator-providers-list"],
     queryFn: fetchAllProviders,
     staleTime: 5 * 60_000,
@@ -72,7 +86,12 @@ export function useConnectedOperatorIdentities(): UseConnectedOperatorIdentities
       .sort((a, b) => a - b)
   }, [providersList])
 
-  const { data: configs, isLoading: isLoadingConfigs } = useReadContracts({
+  const {
+    data: configs,
+    isLoading: isLoadingConfigs,
+    isError: configsError,
+    refetch: refetchConfigs,
+  } = useReadContracts({
     contracts: providerIds.map(
       (id) =>
         ({
@@ -90,10 +109,18 @@ export function useConnectedOperatorIdentities(): UseConnectedOperatorIdentities
   })
 
   const isLoading = isLoadingProviders || isLoadingConfigs
+  const hasError = providersError || configsError
+  // Both refetches surface their own outcomes via wagmi/TanStack state; we
+  // just need to kick them off in parallel and let the caller `void` the
+  // promise. Returning `Promise<void>` rather than swallowing the chain
+  // keeps unhandled-rejection diagnostics clean.
+  const refetch = async () => {
+    await Promise.all([refetchProviders(), refetchConfigs()])
+  }
 
   return useMemo(() => {
     if (!address || !configs) {
-      return { asAdmin: [], asRecipient: [], all: [], isLoading }
+      return { asAdmin: [], asRecipient: [], all: [], isLoading, hasError, refetch }
     }
     const connected = address.toLowerCase()
     const asAdmin: OperatorIdentity[] = []
@@ -120,6 +147,12 @@ export function useConnectedOperatorIdentities(): UseConnectedOperatorIdentities
       asRecipient,
       all: [...allMap.values()].sort((a, b) => a.providerId - b.providerId),
       isLoading,
+      hasError,
+      refetch,
     }
-  }, [address, configs, providerIds, isLoading])
+    // `refetch` closes over the wagmi/query refetch fns; including it in
+    // deps would invalidate the memo every render. The memo's content
+    // doesn't depend on it — it's a passthrough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, configs, providerIds, isLoading, hasError])
 }
