@@ -47,9 +47,21 @@ export enum UnstakeStepType {
   InitiateWithdrawGovernance = "unstake:initiate-governance",
   /** Governance.initiateWithdraw(to, amount) — direct-deposit ERC20 holders. */
   InitiateWithdrawGovernanceWallet = "unstake:initiate-governance-wallet",
-  /** Rollup.finalizeWithdraw(attester) — wallet ERC20 direct-staker path. */
+  /**
+   * Rollup.finalizeWithdraw(attester) — used by BOTH the wallet ERC20
+   * direct-staker path AND the ATP staker path. ATP finalize sidesteps
+   * the Staker because `Staker.finalizeWithdraw` internally calls
+   * `Rollup.finaliseWithdraw` (British spelling, doesn't exist) and
+   * reverts. See `useFinalizeWithdraw.ts` for the original note.
+   */
   FinalizeWithdrawRollup = "unstake:finalize-rollup",
-  /** Staker.finalizeWithdraw(version, attester) — ATP staker path. */
+  /**
+   * @deprecated Do NOT use — the Staker's finalize forwarder reverts
+   * due to a British-vs-American spelling mismatch. Kept here only so
+   * any localStorage cart entries persisted under this step type from
+   * an older build still deserialize cleanly. All new finalize entries
+   * should use {@link FinalizeWithdrawRollup}.
+   */
   FinalizeWithdrawStaker = "unstake:finalize-staker",
   /** Governance.finalizeWithdraw(withdrawalId) — governance path (different contract). */
   FinalizeWithdrawGovernance = "unstake:finalize-governance",

@@ -402,6 +402,7 @@ export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, atp, onClaimSu
                   <WithdrawalActions
                     stakerAddress={stakerAddress}
                     attesterAddress={stake.attesterAddress as Address}
+                    rollupAddress={effectiveRollup}
                     rollupVersion={effectiveRollupVersion}
                     status={status}
                     canFinalize={canFinalize}

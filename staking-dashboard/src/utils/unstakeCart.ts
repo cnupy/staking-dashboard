@@ -87,22 +87,12 @@ export function buildStakerInitiateWithdrawTx(
   }
 }
 
-/** `Staker.finalizeWithdraw(version, attester)` raw tx. */
-export function buildStakerFinalizeWithdrawTx(
-  stakerAddress: Address,
-  version: bigint,
-  attester: Address,
-): RawTransaction {
-  return {
-    to: stakerAddress,
-    data: encodeFunctionData({
-      abi: ATPWithdrawableStakerAbi,
-      functionName: "finalizeWithdraw",
-      args: [version, attester],
-    }),
-    value: 0n,
-  }
-}
+// NOTE: there is intentionally no `buildStakerFinalizeWithdrawTx`. The
+// Staker's `finalizeWithdraw` forwarder internally calls
+// `Rollup.finaliseWithdraw` (British spelling) which doesn't exist on
+// Rollup, and the tx reverts. Finalize must go direct to the rollup
+// via `buildRollupFinalizeWithdrawTx`. See the long-standing comment
+// in `useFinalizeWithdraw.ts` for the original incident note.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Governance path (initiate is on the Staker contract, finalize is on Governance)
@@ -243,24 +233,12 @@ export function buildStakerInitiateWithdrawEntry(inputs: StakerUnstakeInputs): U
   }
 }
 
-export function buildStakerFinalizeWithdrawEntry(inputs: StakerUnstakeInputs): UnstakeCartEntry {
-  const { stakerAddress, version, attester, amount, providerName } = inputs
-  return {
-    type: "unstake",
-    label: "Finalize unstake",
-    description: providerName ? `From ${providerName}` : undefined,
-    transaction: buildStakerFinalizeWithdrawTx(stakerAddress, version, attester),
-    metadata: {
-      stepType: UnstakeStepType.FinalizeWithdrawStaker,
-      stepGroupIdentifier: positionGroup(attester, stakerAddress),
-      attesterAddress: attester,
-      stakerAddress,
-      version,
-      amount,
-      providerName,
-    },
-  }
-}
+// NOTE: there is intentionally no `buildStakerFinalizeWithdrawEntry`.
+// See the matching note above `buildStakerInitiateWithdrawTx`/around
+// where the Staker variant would live: finalize must go direct to the
+// rollup. The Staker-forwarded path reverts due to a long-standing
+// British-vs-American spelling mismatch in the Staker's `finalizeWithdraw`
+// implementation.
 
 interface GovernanceInitiateInputs {
   stakerAddress: Address

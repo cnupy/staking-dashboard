@@ -472,6 +472,7 @@ export const ATPDetailsDelegationItem = ({
                   <WithdrawalActions
                     stakerAddress={stakerAddress}
                     attesterAddress={delegation.operatorAddress as Address}
+                    rollupAddress={effectiveRollup}
                     rollupVersion={effectiveRollupVersion}
                     status={status}
                     canFinalize={canFinalize}
