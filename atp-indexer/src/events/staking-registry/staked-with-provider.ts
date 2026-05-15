@@ -2,6 +2,7 @@ import { ponder } from "ponder:registry";
 import { normalizeAddress } from "../../utils/address";
 import { getActivationThreshold } from "../../utils/rollup";
 import { stakedWithProvider, erc20StakedWithProvider, atpPosition, provider } from "ponder:schema";
+import { decodeMoveWithRollup } from "../../utils/move-with-rollup";
 
 ponder.on("StakingRegistry:StakedWithProvider", async ({ event, context }) => {
   try {
@@ -33,6 +34,13 @@ ponder.on("StakingRegistry:StakedWithProvider", async ({ event, context }) => {
       return; // Don't throw - provider config is metadata, not critical financial data
     }
 
+    const normalizedRollupAddress = normalizeAddress(rollupAddress) as `0x${string}`;
+    // `moveWithRollup` lives in the originating tx's calldata
+    // (StakingRegistry.stake takes `_moveWithLatestRollup`). Decode it so
+    // the dashboard can short-circuit its on-chain rollup-resolution probe
+    // for known rows. null → the dashboard treats it as unknown.
+    const moveWithRollup = decodeMoveWithRollup(event.transaction.input);
+
     // Branch based on whether ATP exists
     if (atp) {
       // ATP-based staking - insert into stakedWithProvider
@@ -43,11 +51,13 @@ ponder.on("StakingRegistry:StakedWithProvider", async ({ event, context }) => {
         operatorAddress: normalizeAddress(atp.operatorAddress || atp.address) as `0x${string}`,
         splitContractAddress: normalizeAddress(coinbaseSplitContractAddress) as `0x${string}`,
         providerIdentifier: providerIdentifier.toString(),
-        rollupAddress: normalizeAddress(rollupAddress) as `0x${string}`,
+        rollupAddress: normalizedRollupAddress,
         attesterAddress: normalizeAddress(attester) as `0x${string}`,
         stakedAmount: BigInt(activationThreshold),
         providerTakeRate: providerConfig.providerTakeRate,
         providerRewardsRecipient: providerConfig.rewardsRecipient,
+        moveWithRollup,
+        effectiveRollup: normalizedRollupAddress,
         txHash: event.transaction.hash,
         blockNumber: event.block.number,
         logIndex: event.log.logIndex,
@@ -60,11 +70,13 @@ ponder.on("StakingRegistry:StakedWithProvider", async ({ event, context }) => {
         stakerAddress,
         splitContractAddress: normalizeAddress(coinbaseSplitContractAddress) as `0x${string}`,
         providerIdentifier: providerIdentifier.toString(),
-        rollupAddress: normalizeAddress(rollupAddress) as `0x${string}`,
+        rollupAddress: normalizedRollupAddress,
         attesterAddress: normalizeAddress(attester) as `0x${string}`,
         stakedAmount: BigInt(activationThreshold),
         providerTakeRate: providerConfig.providerTakeRate,
         providerRewardsRecipient: providerConfig.rewardsRecipient,
+        moveWithRollup,
+        effectiveRollup: normalizedRollupAddress,
         txHash: event.transaction.hash,
         blockNumber: event.block.number,
         logIndex: event.log.logIndex,

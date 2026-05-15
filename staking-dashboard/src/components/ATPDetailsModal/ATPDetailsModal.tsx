@@ -373,7 +373,6 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                         key={index}
                         stake={stake}
                         stakerAddress={stakerAddress}
-                        rollupVersion={rollupVersion}
                         atp={atp}
                         onWithdrawSuccess={handleWithdrawSuccess}
                         atpType={atpType}
@@ -472,7 +471,6 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                         }}
                         isLoadingDelegationRewards={isLoadingDelegationRewards && !delegation.hasFailedDeposit}
                         stakerAddress={stakerAddress}
-                        rollupVersion={rollupVersion}
                         onClaimClick={handleDelegationClaimClick}
                         onWithdrawSuccess={handleWithdrawSuccess}
                         atpType={atpType}

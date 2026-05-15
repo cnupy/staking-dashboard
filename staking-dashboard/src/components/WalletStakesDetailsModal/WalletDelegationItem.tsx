@@ -43,8 +43,18 @@ export const WalletDelegationItem = ({
   const { date, time } = formatBlockTimestamp(delegation.timestamp)
   const { isRewardsClaimable } = useIsRewardsClaimable()
 
+  // See WalletDirectStakeItem for the rationale: `delegationRollupAddress`
+  // is the deposit-time rollup. The protocol may have migrated the live
+  // record to the canonical rollup (`moveWithRollup = true` flow), so any
+  // unstake / withdraw write must target `effectiveRollup` — the rollup
+  // that holds the live attester record right now. Indexer hint short-
+  // circuits the probe; on-chain probe still runs as the safety net.
   const delegationRollupAddress = delegation.rollupAddress as Address
-  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(delegation.attesterAddress as Address, delegationRollupAddress)
+  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, effectiveRollup, refetch: refetchStatus } = useSequencerStatus(
+    delegation.attesterAddress as Address,
+    delegationRollupAddress,
+    { effectiveRollup: delegation.effectiveRollup, moveWithRollup: delegation.moveWithRollup },
+  )
   const { withdrawalDelayDays } = useGovernanceConfig()
 
   const {
@@ -359,7 +369,7 @@ export const WalletDelegationItem = ({
                   <WalletWithdrawalActions
                     attesterAddress={delegation.attesterAddress as Address}
                     recipientAddress={address}
-                    rollupAddress={delegationRollupAddress}
+                    rollupAddress={effectiveRollup}
                     status={status}
                     canFinalize={canFinalize}
                     actualUnlockTime={actualUnlockTime}

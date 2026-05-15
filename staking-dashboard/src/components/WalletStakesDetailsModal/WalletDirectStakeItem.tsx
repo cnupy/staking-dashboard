@@ -34,8 +34,23 @@ export const WalletDirectStakeItem = ({
   const { symbol, decimals } = useStakingAssetTokenDetails()
   const { date, time } = formatBlockTimestamp(stake.timestamp)
 
+  // The indexer records the deposit-time rollup. For stakes deposited with
+  // `moveWithRollup = true` (the dashboard's default), the protocol migrates
+  // the stake as the canonical rollup upgrades, so the deposit-time rollup
+  // no longer holds the live record. `useSequencerStatus` probes both
+  // candidates and returns `effectiveRollup` — the rollup that actually
+  // holds the live attester. Any write (unstake / withdraw) MUST go to
+  // `effectiveRollup`, not `stakeRollupAddress`.
+  //
+  // The indexer now also ships `effectiveRollup` + `moveWithRollup` per
+  // stake — passing them as a hint lets the probe short-circuit when the
+  // hint is correct. Chain probe still runs and overrides on disagreement.
   const stakeRollupAddress = stake.rollupAddress as Address
-  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(stake.attesterAddress as Address, stakeRollupAddress)
+  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, effectiveRollup, refetch: refetchStatus } = useSequencerStatus(
+    stake.attesterAddress as Address,
+    stakeRollupAddress,
+    { effectiveRollup: stake.effectiveRollup, moveWithRollup: stake.moveWithRollup },
+  )
   const { withdrawalDelayDays } = useGovernanceConfig()
 
   const {
@@ -251,7 +266,7 @@ export const WalletDirectStakeItem = ({
                   <WalletWithdrawalActions
                     attesterAddress={stake.attesterAddress as Address}
                     recipientAddress={address}
-                    rollupAddress={stakeRollupAddress}
+                    rollupAddress={effectiveRollup}
                     status={status}
                     canFinalize={canFinalize}
                     actualUnlockTime={actualUnlockTime}

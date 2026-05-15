@@ -126,18 +126,23 @@ export const WalletDirectStakingFlow = ({
           return
         }
 
-        // Add to localStorage so it appears in UI immediately
+        // Add to localStorage so it appears in UI immediately. Capture
+        // `moveWithRollup` from the deposit-flow's current value rather
+        // than hardcoding — if a future flow exposes a toggle, the
+        // pending row reflects the operator's actual choice and the
+        // aggregator's hint stays correct.
         addPendingDirectStake(address, {
           attesterAddress: attesterAddress as Address,
           withdrawerAddress: address as Address,
           stakedAmount: activationThreshold.toString(),
           txHash,
           timestamp: Math.floor(Date.now() / 1000),
+          moveWithRollup: moveWithLatestRollup,
         })
 
         addedPendingStakesRef.current.add(attesterAddress)
       })
-  }, [depositTxs, address, activationThreshold])
+  }, [depositTxs, address, activationThreshold, moveWithLatestRollup])
 
   // Track when all deposits complete
   useEffect(() => {

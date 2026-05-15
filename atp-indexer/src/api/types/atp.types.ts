@@ -4,9 +4,22 @@
 
 export type StakeStatus = 'SUCCESS' | 'FAILED' | 'PENDING' | 'UNSTAKED';
 
-export interface ATPDirectStake {
+/**
+ * Fields the indexer attaches as a fast-path hint for "where this stake
+ * currently lives". The dashboard short-circuits its on-chain probe when
+ * these are present. Optional for TS-consumer back-compat — older
+ * clients pre-dating these fields keep type-checking. See the matching
+ * type in `staking.types.ts`.
+ */
+interface EffectiveRollupFields {
+  moveWithRollup?: boolean | null;
+  effectiveRollup?: string;
+}
+
+export interface ATPDirectStake extends EffectiveRollupFields {
   attesterAddress: string;
   operatorAddress: string;
+  rollupAddress: string;
   stakedAmount: string;
   totalSlashed: string;
   txHash: string;
@@ -18,11 +31,12 @@ export interface ATPDirectStake {
   status: StakeStatus;
 }
 
-export interface ATPDelegation {
+export interface ATPDelegation extends EffectiveRollupFields {
   providerId: number;
   providerName: string;
   providerLogo: string;
   operatorAddress: string;
+  rollupAddress: string;
   stakedAmount: string;
   totalSlashed: string;
   splitContract: string;

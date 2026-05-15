@@ -130,6 +130,13 @@ export async function handleBeneficiaryStakingOverview(c: Context): Promise<Resp
       atpAddress: checksumAddress(atpByStaker.get(stake.stakerAddress.toLowerCase()) || stake.atpAddress),
       attesterAddress: checksumAddress(stake.attesterAddress),
       rollupAddress: checksumAddress(stake.rollupAddress),
+      // Hints for the dashboard's fast-path unstake routing. See
+      // `staked.moveWithRollup` / `staked.effectiveRollup` on the schema.
+      // `moveWithRollup` may be null when the originating tx's entry
+      // point isn't one we recognise (e.g., a future Staker variant) —
+      // the dashboard's on-chain probe is the safety net for those rows.
+      moveWithRollup: stake.moveWithRollup,
+      effectiveRollup: checksumAddress(stake.effectiveRollup),
       stakedAmount: stake.stakedAmount.toString(),
       hasFailedDeposit: stake.hasFailedDeposit,
       failedDepositTxHash: stake.failedDepositTxHash,
@@ -152,6 +159,9 @@ export async function handleBeneficiaryStakingOverview(c: Context): Promise<Resp
         providerLogo: metadata?.providerLogoUrl || '',
         attesterAddress: checksumAddress(delegation.attesterAddress),
         rollupAddress: checksumAddress(delegation.rollupAddress),
+        // See directStakeBreakdown's note: fast-path hint for unstake routing.
+        moveWithRollup: delegation.moveWithRollup,
+        effectiveRollup: checksumAddress(delegation.effectiveRollup),
         stakedAmount: delegation.stakedAmount.toString(),
         splitContract: checksumAddress(delegation.splitContractAddress),
         providerTakeRate: delegation.providerTakeRate,
@@ -177,6 +187,9 @@ export async function handleBeneficiaryStakingOverview(c: Context): Promise<Resp
         providerLogo: metadata?.providerLogoUrl || '',
         attesterAddress: checksumAddress(delegation.attesterAddress),
         rollupAddress: checksumAddress(delegation.rollupAddress),
+        // See directStakeBreakdown's note: fast-path hint for unstake routing.
+        moveWithRollup: delegation.moveWithRollup,
+        effectiveRollup: checksumAddress(delegation.effectiveRollup),
         stakedAmount: delegation.stakedAmount.toString(),
         splitContract: checksumAddress(delegation.splitContractAddress),
         providerTakeRate: delegation.providerTakeRate,
@@ -196,6 +209,14 @@ export async function handleBeneficiaryStakingOverview(c: Context): Promise<Resp
       attesterAddress: checksumAddress(dep.attesterAddress),
       withdrawerAddress: checksumAddress(dep.withdrawerAddress),
       rollupAddress: checksumAddress(dep.rollupAddress),
+      // Fast-path hint for unstake routing. `deposit.moveWithRollup` is
+      // decoded from the originating tx's calldata at indexing time;
+      // `deposit.effectiveRollup` follows canonical migrations on
+      // `moveWithRollup = true` rows. Both columns are populated at
+      // insert by the deposit handler; the schema enforces non-null on
+      // `effectiveRollup`.
+      moveWithRollup: dep.moveWithRollup ?? null,
+      effectiveRollup: checksumAddress(dep.effectiveRollup),
       stakedAmount: dep.amount.toString(),
       txHash: dep.txHash,
       timestamp: Number(dep.timestamp),

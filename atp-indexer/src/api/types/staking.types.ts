@@ -24,9 +24,33 @@ export interface StakingSummaryResponse {
   stats: StakingStats;
 }
 
-export interface DirectStakeBreakdown {
+/**
+ * Fields common to every "this is where the stake currently lives" hint
+ * the indexer emits. The dashboard uses these to short-circuit its
+ * on-chain probe; null `moveWithRollup` means the indexer couldn't decode
+ * it and the dashboard should fall back to the probe.
+ *
+ * Both fields are optional in the response type. This is purely a
+ * TypeScript-consumer compatibility hedge: older clients pre-dating this
+ * field, or any future indexer regression that returns rows without the
+ * hint, both keep type-checking. The runtime payload from this indexer
+ * always sets them.
+ */
+interface EffectiveRollupFields {
+  /** Decoded from the originating tx's calldata. `null` if the entry
+   *  point isn't a recognised stake function (future variants, manual
+   *  contract interaction, etc.). */
+  moveWithRollup?: boolean | null;
+  /** The rollup currently believed to hold the live record. Tracks
+   *  canonical migrations for `moveWithRollup = true` rows; equals
+   *  `rollupAddress` otherwise. */
+  effectiveRollup?: string;
+}
+
+export interface DirectStakeBreakdown extends EffectiveRollupFields {
   atpAddress: string;
   attesterAddress: string;
+  rollupAddress: string;
   stakedAmount: string;
   hasFailedDeposit: boolean;
   failedDepositTxHash: string | null;
@@ -40,12 +64,13 @@ export interface DirectStakeBreakdown {
   providerLogo?: string;
 }
 
-export interface DelegationBreakdown {
+export interface DelegationBreakdown extends EffectiveRollupFields {
   atpAddress: string;
   providerId: number;
   providerName: string;
   providerLogo: string;
   attesterAddress: string;
+  rollupAddress: string;
   stakedAmount: string;
   splitContract: string;
   providerTakeRate: number;
@@ -59,11 +84,12 @@ export interface DelegationBreakdown {
   status: StakeStatus;
 }
 
-export interface Erc20DelegationBreakdown {
+export interface Erc20DelegationBreakdown extends EffectiveRollupFields {
   providerId: number;
   providerName: string;
   providerLogo: string;
   attesterAddress: string;
+  rollupAddress: string;
   stakedAmount: string;
   splitContract: string;
   providerTakeRate: number;
@@ -77,9 +103,10 @@ export interface Erc20DelegationBreakdown {
   status: StakeStatus;
 }
 
-export interface Erc20DirectStakeBreakdown {
+export interface Erc20DirectStakeBreakdown extends EffectiveRollupFields {
   attesterAddress: string;
   withdrawerAddress: string;
+  rollupAddress: string;
   stakedAmount: string;
   txHash: string;
   timestamp: number;

@@ -8,14 +8,20 @@ import { getUnlockTimeDisplay } from "@/utils/dateFormatters";
 import { MilestoneStatusBadge } from "@/components/MilestoneStatusBadge";
 import {
   buildStakerInitiateWithdrawEntry,
-  buildRollupFinalizeWithdrawEntry,
+  buildStakerFinalizeWithdrawEntry,
 } from "@/utils/unstakeCart";
 
 interface WithdrawalActionsProps {
   stakerAddress: Address;
   attesterAddress: Address;
-  rollupVersion: bigint;
-  rollupAddress: Address;
+  /**
+   * On-chain version of the rollup that currently holds the stake's live
+   * record (i.e. resolved against `effectiveRollup`, not the canonical).
+   * `undefined` while the version resolver is still in-flight — the
+   * component renders disabled buttons so a user can't queue a write
+   * with the wrong (canonical) version.
+   */
+  rollupVersion: bigint | undefined;
   status: number | undefined;
   canFinalize: boolean;
   actualUnlockTime?: bigint;
@@ -40,7 +46,6 @@ export const WithdrawalActions = ({
   stakerAddress,
   attesterAddress,
   rollupVersion,
-  rollupAddress,
   status,
   canFinalize,
   actualUnlockTime,
@@ -67,25 +72,49 @@ export const WithdrawalActions = ({
 
   const isMATP = atpType === "MATP";
   const isMilestoneGated = isMATP && !canWithdraw;
+  // While the per-stake on-chain version is still resolving, block both
+  // actions. The risk we're guarding against: callers compute the version
+  // from `effectiveRollup` (the rollup that actually holds the live
+  // record). If we let the buttons fire before that resolves, the cart
+  // entry would carry an undefined or — worse, if upstream silently
+  // falls back to canonical — the wrong version, and the Staker would
+  // route the write to the wrong rollup.
+  const isVersionResolving = rollupVersion === undefined;
 
   const canInitiateUnstake =
     (status === SequencerStatus.VALIDATING || status === SequencerStatus.ZOMBIE) &&
-    !isMilestoneGated;
-  const canFinalizeWithdrawNow = canFinalize && !isMilestoneGated;
+    !isMilestoneGated &&
+    !isVersionResolving;
+  const canFinalizeWithdrawNow = canFinalize && !isMilestoneGated && !isVersionResolving;
 
   // Pre-build the cart entries used by the click handlers. We do NOT use
   // their raw-calldata signature to detect "already queued" — that flickers
   // when underlying data (rollup version, attester) refetches mid-render and
   // causes duplicate cart entries. Use the stable stepGroupIdentifier from
   // the entry's metadata instead (see `checkStepGroupInQueue`).
+  //
+  // When the version is undefined the entries are built with a stale
+  // 0n placeholder; the disabled buttons gate them from being added,
+  // but we still build them so the queued-state check stays stable
+  // across renders. Once `rollupVersion` resolves, the entry is
+  // rebuilt with the correct value.
+  const safeRollupVersion = rollupVersion ?? 0n;
   const initiateEntry = buildStakerInitiateWithdrawEntry({
     stakerAddress,
-    version: rollupVersion,
+    version: safeRollupVersion,
     attester: attesterAddress,
     providerName,
   });
-  const finalizeEntry = buildRollupFinalizeWithdrawEntry({
-    rollupAddress,
+  // ATP-routed stakes are held by the Staker contract, not the user, so the
+  // exit record on the Rollup is keyed to the Staker — not msg.sender. The
+  // finalize must go through `Staker.finalizeWithdraw(version, attester)`;
+  // calling `Rollup.finalizeWithdraw(attester)` directly from the user's
+  // wallet reverts because no exit was initiated by `msg.sender` on the
+  // rollup. The Staker forwards internally to the correct rollup using
+  // `version`.
+  const finalizeEntry = buildStakerFinalizeWithdrawEntry({
+    stakerAddress,
+    version: safeRollupVersion,
     attester: attesterAddress,
     providerName,
   });
@@ -101,6 +130,10 @@ export const WithdrawalActions = ({
       openCart();
       return;
     }
+    // Defence-in-depth: the button is `disabled` while
+    // `isVersionResolving`, but a stray click during a re-render race
+    // shouldn't slip through with the placeholder version.
+    if (isVersionResolving) return;
     addTransaction(initiateEntry, { preventDuplicate: true });
     onSuccess?.();
     openCart();
@@ -111,6 +144,7 @@ export const WithdrawalActions = ({
       openCart();
       return;
     }
+    if (isVersionResolving) return;
     addTransaction(finalizeEntry, { preventDuplicate: true });
     onSuccess?.();
     openCart();
@@ -154,7 +188,13 @@ export const WithdrawalActions = ({
                 ? "bg-aqua/20 border border-aqua/40 text-aqua hover:bg-aqua/30"
                 : "bg-aqua text-ink hover:bg-aqua/90"
             }`}
-            title={isMilestoneGated ? milestoneBlockError || undefined : undefined}
+            title={
+              isVersionResolving
+                ? "Resolving rollup version…"
+                : isMilestoneGated
+                ? milestoneBlockError || undefined
+                : undefined
+            }
           >
             {isInitiateQueued ? (
               <span className="flex items-center justify-center gap-1.5">
@@ -186,7 +226,13 @@ export const WithdrawalActions = ({
                 ? "bg-chartreuse/20 border border-chartreuse/40 text-chartreuse hover:bg-chartreuse/30"
                 : "bg-chartreuse text-ink hover:bg-chartreuse/90"
             }`}
-            title={isMilestoneGated ? milestoneBlockError || undefined : undefined}
+            title={
+              isVersionResolving
+                ? "Resolving rollup version…"
+                : isMilestoneGated
+                ? milestoneBlockError || undefined
+                : undefined
+            }
           >
             {isFinalizeQueued ? (
               <span className="flex items-center justify-center gap-1.5">

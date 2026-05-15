@@ -17,7 +17,19 @@ import {
   cleanupStalePendingStakes,
 } from '@/utils/pendingDirectStakes'
 
-export interface DirectStakeBreakdown {
+/**
+ * Hint fields the indexer attaches to every stake-shaped row. The
+ * dashboard uses these to pre-target unstake writes at the correct
+ * rollup without an extra on-chain probe. `moveWithRollup = null` means
+ * the indexer couldn't decode the flag (unrecognised entry point) and the
+ * caller should fall back to the on-chain probe.
+ */
+export interface EffectiveRollupHints {
+  effectiveRollup: Address
+  moveWithRollup: boolean | null
+}
+
+export interface DirectStakeBreakdown extends EffectiveRollupHints {
   atpAddress: Address
   attesterAddress: Address
   rollupAddress: Address
@@ -36,7 +48,7 @@ export interface DirectStakeBreakdown {
   providerLogo?: string
 }
 
-export interface DelegationBreakdown {
+export interface DelegationBreakdown extends EffectiveRollupHints {
   atpAddress: Address
   providerId: number
   providerName?: string
@@ -64,7 +76,7 @@ export interface DelegationBreakdown {
   splitContractBalance: bigint
 }
 
-export interface Erc20DelegationBreakdown {
+export interface Erc20DelegationBreakdown extends EffectiveRollupHints {
   providerId: number
   providerName?: string
   providerLogo?: string
@@ -89,7 +101,7 @@ export interface Erc20DelegationBreakdown {
   splitContractBalance: bigint
 }
 
-export interface Erc20DirectStakeBreakdown {
+export interface Erc20DirectStakeBreakdown extends EffectiveRollupHints {
   attesterAddress: Address
   withdrawerAddress: Address
   rollupAddress: Address
@@ -122,7 +134,14 @@ export interface AggregatedStakingData {
   refetch: () => void
 }
 
-interface ApiDirectStake {
+// API-shape mirror of `EffectiveRollupHints` — same fields but string types
+// because the API hasn't been through parsing yet.
+interface ApiEffectiveRollupHints {
+  effectiveRollup?: string
+  moveWithRollup?: boolean | null
+}
+
+interface ApiDirectStake extends ApiEffectiveRollupHints {
   atpAddress: string
   attesterAddress: string
   rollupAddress: string
@@ -141,7 +160,7 @@ interface ApiDirectStake {
   providerLogo?: string
 }
 
-interface ApiDelegation {
+interface ApiDelegation extends ApiEffectiveRollupHints {
   atpAddress: string
   providerId: number
   providerName?: string
@@ -161,7 +180,7 @@ interface ApiDelegation {
   blockNumber: number
 }
 
-interface ApiErc20Delegation {
+interface ApiErc20Delegation extends ApiEffectiveRollupHints {
   providerId: number
   providerName?: string
   providerLogo?: string
@@ -180,7 +199,7 @@ interface ApiErc20Delegation {
   blockNumber: number
 }
 
-interface ApiErc20DirectStake {
+interface ApiErc20DirectStake extends ApiEffectiveRollupHints {
   attesterAddress: string
   withdrawerAddress: string
   rollupAddress: string
@@ -221,6 +240,21 @@ async function fetchStakingData(beneficiary: Address): Promise<StakingApiRespons
 }
 
 /**
+ * Pull `effectiveRollup` / `moveWithRollup` off an API row. The indexer
+ * may not yet populate these (older indexer build, row backfilled before
+ * the column existed) — fall back to the deposit-time rollupAddress and a
+ * null flag, both of which the dashboard's probe handles correctly.
+ */
+function extractEffectiveRollupHints(
+  apiRow: ApiEffectiveRollupHints & { rollupAddress: string },
+): EffectiveRollupHints {
+  return {
+    effectiveRollup: (apiRow.effectiveRollup ?? apiRow.rollupAddress) as Address,
+    moveWithRollup: apiRow.moveWithRollup ?? null,
+  }
+}
+
+/**
  * Convert API direct stake response to DirectStakeBreakdown
  */
 function parseDirectStake(stake: ApiDirectStake): DirectStakeBreakdown {
@@ -228,6 +262,7 @@ function parseDirectStake(stake: ApiDirectStake): DirectStakeBreakdown {
     atpAddress: stake.atpAddress as Address,
     attesterAddress: stake.attesterAddress as Address,
     rollupAddress: stake.rollupAddress as Address,
+    ...extractEffectiveRollupHints(stake),
     stakedAmount: stringToBigInt(stake.stakedAmount),
     hasFailedDeposit: stake.hasFailedDeposit,
     failedDepositTxHash: stake.failedDepositTxHash,
@@ -314,6 +349,7 @@ function parseDelegation(
     providerLogo: delegation.providerLogo,
     attesterAddress: delegation.attesterAddress as Address,
     rollupAddress: delegation.rollupAddress as Address,
+    ...extractEffectiveRollupHints(delegation),
     stakedAmount: stringToBigInt(delegation.stakedAmount),
     rewards: delegation.hasFailedDeposit ? 0n : userRewards,
     splitContract: delegation.splitContract as Address,
@@ -384,6 +420,7 @@ function parseErc20Delegation(
     providerLogo: delegation.providerLogo,
     attesterAddress: delegation.attesterAddress as Address,
     rollupAddress: delegation.rollupAddress as Address,
+    ...extractEffectiveRollupHints(delegation),
     stakedAmount: stringToBigInt(delegation.stakedAmount),
     rewards: delegation.hasFailedDeposit ? 0n : userRewards,
     splitContract: delegation.splitContract as Address,
@@ -409,6 +446,7 @@ function parseErc20DirectStake(stake: ApiErc20DirectStake): Erc20DirectStakeBrea
     attesterAddress: stake.attesterAddress as Address,
     withdrawerAddress: stake.withdrawerAddress as Address,
     rollupAddress: stake.rollupAddress as Address,
+    ...extractEffectiveRollupHints(stake),
     stakedAmount: stringToBigInt(stake.stakedAmount),
     hasFailedDeposit: stake.hasFailedDeposit,
     failedDepositTxHash: stake.failedDepositTxHash,
@@ -578,6 +616,13 @@ export const useAggregatedStakingData = (): AggregatedStakingData => {
         attesterAddress: stake.attesterAddress,
         withdrawerAddress: stake.withdrawerAddress,
         rollupAddress: contracts.rollup.address,
+        // Pending (locally-tracked, pre-indexer) stakes always target the
+        // current canonical rollup — that's where the dashboard's deposit
+        // flow submits. `moveWithRollup` comes from the deposit-flow's
+        // captured value; older localStorage entries (pre-plumbing)
+        // default to `true`, matching what the flow used at the time.
+        effectiveRollup: contracts.rollup.address,
+        moveWithRollup: stake.moveWithRollup ?? true,
         stakedAmount: BigInt(stake.stakedAmount),
         hasFailedDeposit: false,
         failedDepositTxHash: null,

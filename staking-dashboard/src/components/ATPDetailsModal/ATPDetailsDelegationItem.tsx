@@ -14,6 +14,7 @@ import { getExplorerTxUrl, getExplorerAddressUrl } from "@/utils/explorerUtils"
 import { useSequencerStatus, SequencerStatus } from "@/hooks/rollup/useSequencerStatus"
 import { useStakeHealth } from "@/hooks/rollup/useStakeHealth"
 import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
+import { useRollupVersionFor } from "@/hooks/rollup/useRollupVersionFor"
 import { useGovernanceConfig } from "@/hooks/governance"
 import { WithdrawalActions } from "./WithdrawalActions"
 import type { Delegation, StakeWithProviderReward } from "@/hooks"
@@ -23,7 +24,6 @@ interface ATPDetailsDelegationItemProps {
   delegationRewards: StakeWithProviderReward
   isLoadingDelegationRewards: boolean
   stakerAddress: Address
-  rollupVersion: bigint
   onClaimClick: (delegation: {
     splitContract: string
     providerName: string | null
@@ -46,7 +46,6 @@ export const ATPDetailsDelegationItem = ({
   delegationRewards,
   isLoadingDelegationRewards,
   stakerAddress,
-  rollupVersion,
   onClaimClick,
   onWithdrawSuccess,
   atpType,
@@ -59,7 +58,19 @@ export const ATPDetailsDelegationItem = ({
   const { isRewardsClaimable } = useIsRewardsClaimable()
 
   const delegationRollupAddress = delegation.rollupAddress as Address
-  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(delegation.operatorAddress as Address, delegationRollupAddress)
+  // `effectiveRollup` is the rollup that holds the live attester record
+  // right now — it may differ from the indexer's deposit-time
+  // `delegationRollupAddress` once the stake has migrated (see
+  // `useAttesterViewBestEffort`). Any unstake write must target the
+  // effective rollup, AND must pass the matching on-chain version to
+  // `Staker.initiateWithdraw(version, attester)` so the Staker routes
+  // to the same rollup. Indexer hint short-circuits the probe.
+  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, effectiveRollup, refetch: refetchStatus } = useSequencerStatus(
+    delegation.operatorAddress as Address,
+    delegationRollupAddress,
+    { effectiveRollup: delegation.effectiveRollup, moveWithRollup: delegation.moveWithRollup },
+  )
+  const { version: effectiveRollupVersion } = useRollupVersionFor(effectiveRollup)
   const { withdrawalDelayDays } = useGovernanceConfig()
 
   const {
@@ -461,8 +472,7 @@ export const ATPDetailsDelegationItem = ({
                   <WithdrawalActions
                     stakerAddress={stakerAddress}
                     attesterAddress={delegation.operatorAddress as Address}
-                    rollupVersion={rollupVersion}
-                    rollupAddress={delegationRollupAddress}
+                    rollupVersion={effectiveRollupVersion}
                     status={status}
                     canFinalize={canFinalize}
                     actualUnlockTime={actualUnlockTime}

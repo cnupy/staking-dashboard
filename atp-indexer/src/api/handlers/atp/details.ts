@@ -30,6 +30,13 @@ function formatDirectStakes(
       attesterAddress: checksumAddress(stake.attesterAddress),
       operatorAddress: checksumAddress(stake.operatorAddress),
       rollupAddress: checksumAddress(stake.rollupAddress),
+      // Fast-path hint for unstake routing (see `staked.effectiveRollup`).
+      // Falls back to `rollupAddress` for rows backfilled before the
+      // column existed.
+      moveWithRollup: stake.moveWithRollup ?? null,
+      effectiveRollup: stake.effectiveRollup
+        ? checksumAddress(stake.effectiveRollup)
+        : checksumAddress(stake.rollupAddress),
       stakedAmount: activationThreshold,
       totalSlashed: totalSlashed.toString(),
       txHash: stake.txHash,
@@ -65,6 +72,11 @@ function formatDelegations(
         providerLogo: metadata?.providerLogoUrl || '',
         operatorAddress: checksumAddress(op.attesterAddress),
         rollupAddress: checksumAddress(op.rollupAddress),
+        // See formatDirectStakes for the rationale.
+        moveWithRollup: op.moveWithRollup ?? null,
+        effectiveRollup: op.effectiveRollup
+          ? checksumAddress(op.effectiveRollup)
+          : checksumAddress(op.rollupAddress),
         stakedAmount: activationThreshold,
         totalSlashed: totalSlashed.toString(),
         splitContract: checksumAddress(op.splitContractAddress),

@@ -74,6 +74,21 @@ export const stakedWithProvider = onchainTable("staked_with_provider", (t) => ({
   stakedAmount: t.bigint().notNull(),
   providerTakeRate: t.integer().notNull(),
   providerRewardsRecipient: t.hex().notNull(),
+  /**
+   * Whether this stake was deposited with `_moveWithLatestRollup = true`.
+   * Decoded from the originating tx's calldata at insert time. Nullable
+   * for rows where decoding failed (unknown entry point, calldata mangled,
+   * etc.) — callers should treat null as "consult the on-chain probe".
+   */
+  moveWithRollup: t.boolean(),
+  /**
+   * The rollup that currently holds the live record for this stake.
+   * Starts equal to `rollupAddress`. Updated to the new canonical rollup
+   * by the `Registry:CanonicalRollupUpdated` handler whenever
+   * `moveWithRollup = true`. The dashboard reads this as a fast hint and
+   * still falls back to the on-chain probe for safety.
+   */
+  effectiveRollup: t.hex().notNull(),
   txHash: t.hex().notNull(),
   blockNumber: t.bigint().notNull(),
   logIndex: t.integer().notNull(),
@@ -82,6 +97,7 @@ export const stakedWithProvider = onchainTable("staked_with_provider", (t) => ({
   atpAddressIdx: index().on(table.atpAddress),
   providerIdentifierIdx: index().on(table.providerIdentifier),
   attesterAddressIdx: index().on(table.attesterAddress),
+  effectiveRollupIdx: index().on(table.effectiveRollup),
 }));
 
 export const stakedWithProviderRelations = relations(stakedWithProvider, ({ one }) => ({
@@ -109,6 +125,10 @@ export const erc20StakedWithProvider = onchainTable("erc20_staked_with_provider"
   stakedAmount: t.bigint().notNull(),
   providerTakeRate: t.integer().notNull(),
   providerRewardsRecipient: t.hex().notNull(),
+  /** See `stakedWithProvider.moveWithRollup`. */
+  moveWithRollup: t.boolean(),
+  /** See `stakedWithProvider.effectiveRollup`. */
+  effectiveRollup: t.hex().notNull(),
   txHash: t.hex().notNull(),
   blockNumber: t.bigint().notNull(),
   logIndex: t.integer().notNull(),
@@ -117,6 +137,7 @@ export const erc20StakedWithProvider = onchainTable("erc20_staked_with_provider"
   stakerAddressIdx: index().on(table.stakerAddress),
   providerIdentifierIdx: index().on(table.providerIdentifier),
   attesterAddressIdx: index().on(table.attesterAddress),
+  effectiveRollupIdx: index().on(table.effectiveRollup),
 }));
 
 export const erc20StakedWithProviderRelations = relations(erc20StakedWithProvider, ({ one }) => ({
@@ -137,6 +158,10 @@ export const staked = onchainTable("staked", (t) => ({
   attesterAddress: t.hex().notNull(),
   rollupAddress: t.hex().notNull(),
   stakedAmount: t.bigint().notNull(),
+  /** See `stakedWithProvider.moveWithRollup`. */
+  moveWithRollup: t.boolean(),
+  /** See `stakedWithProvider.effectiveRollup`. */
+  effectiveRollup: t.hex().notNull(),
   txHash: t.hex().notNull(),
   blockNumber: t.bigint().notNull(),
   logIndex: t.integer().notNull(),
@@ -144,6 +169,7 @@ export const staked = onchainTable("staked", (t) => ({
 }), (table) => ({
   atpAddressIdx: index().on(table.atpAddress),
   attesterAddressIdx: index().on(table.attesterAddress),
+  effectiveRollupIdx: index().on(table.effectiveRollup),
 }));
 
 export const stakedRelations = relations(staked, ({ one }) => ({
@@ -321,12 +347,17 @@ export const deposit = onchainTable("deposit", (t) => ({
   proofOfPossessionX: t.bigint().notNull(),
   proofOfPossessionY: t.bigint().notNull(),
   amount: t.bigint().notNull(),
+  /** See `stakedWithProvider.moveWithRollup`. */
+  moveWithRollup: t.boolean(),
+  /** See `stakedWithProvider.effectiveRollup`. */
+  effectiveRollup: t.hex().notNull(),
   txHash: t.hex().notNull(),
   blockNumber: t.bigint().notNull(),
   logIndex: t.integer().notNull(),
   timestamp: t.bigint().notNull(),
 }), (table) => ({
   attesterAddressIdx: index().on(table.attesterAddress),
+  effectiveRollupIdx: index().on(table.effectiveRollup),
 }));
 
 /**

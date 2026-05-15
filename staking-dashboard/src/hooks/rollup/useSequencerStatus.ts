@@ -1,6 +1,6 @@
 import type { Address } from "viem";
 import { useBlock } from "wagmi";
-import { useAttesterViewBestEffort } from "./useAttesterViewBestEffort";
+import { useAttesterViewBestEffort, type AttesterViewHint } from "./useAttesterViewBestEffort";
 import { useGovernanceWithdrawal } from "../governance/useGovernanceWithdrawal";
 import { SequencerStatus, getStatusLabel } from "./sequencerStatus";
 
@@ -16,13 +16,19 @@ export { SequencerStatus, getStatusLabel };
  * @param sequencerAddress - The address of the sequencer
  * @param rollupAddress - The delegation's original rollup. May be undefined
  *                        while the caller's data is still loading.
+ * @param hint - Optional indexer-supplied hint. When the indexer has
+ *               `effectiveRollup` + `moveWithRollup` for this stake (the
+ *               fast path), pass them through and the underlying probe will
+ *               use them to short-circuit. Probe still runs as a safety
+ *               net — chain is always authoritative.
  */
 export function useSequencerStatus(
   sequencerAddress: Address | undefined,
   rollupAddress: Address | undefined,
+  hint?: AttesterViewHint | null,
 ) {
-  const { status, effectiveBalance, exit, isLoading, error, refetch } =
-    useAttesterViewBestEffort(sequencerAddress, rollupAddress);
+  const { status, effectiveBalance, exit, effectiveRollup, isLoading, error, refetch } =
+    useAttesterViewBestEffort(sequencerAddress, rollupAddress, hint);
 
   // Query the governance withdrawal to get the REAL unlock time
   const { withdrawal, isLoading: isLoadingWithdrawal } = useGovernanceWithdrawal(exit?.withdrawalId);
@@ -67,6 +73,11 @@ export function useSequencerStatus(
     isZombie,
     isExiting,
     canFinalize,
+    /** The rollup the live attester record was found on. Send any
+     *  unstake / withdraw write to this address, NOT to the
+     *  indexer-supplied `rollupAddress` (which reflects the deposit
+     *  event's rollup and may diverge once the stake migrates). */
+    effectiveRollup,
     isLoading: isLoading || isLoadingWithdrawal,
     error,
     refetch,

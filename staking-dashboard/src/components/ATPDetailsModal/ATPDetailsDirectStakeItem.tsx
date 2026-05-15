@@ -13,6 +13,7 @@ import { getExplorerTxUrl } from "@/utils/explorerUtils"
 import { useSequencerStatus, SequencerStatus } from "@/hooks/rollup/useSequencerStatus"
 import { useStakeHealth } from "@/hooks/rollup/useStakeHealth"
 import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
+import { useRollupVersionFor } from "@/hooks/rollup/useRollupVersionFor"
 import { useGovernanceConfig } from "@/hooks/governance"
 import { ClaimSelfStakeRewardsModal } from "@/components/ClaimSelfStakeRewardsModal"
 import { WithdrawalActions } from "./WithdrawalActions"
@@ -22,7 +23,6 @@ import type { ATPData } from "@/hooks/atp"
 interface ATPDetailsDirectStakeItemProps {
   stake: DirectStake
   stakerAddress: Address
-  rollupVersion: bigint
   atp: ATPData
   onClaimSuccess?: () => void
   onWithdrawSuccess?: () => void
@@ -36,7 +36,7 @@ interface ATPDetailsDirectStakeItemProps {
  * Individual self stake item component
  * Displays sequencer address, transaction info, and links to explorers
  */
-export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion, atp, onClaimSuccess, onWithdrawSuccess, atpType, registryAddress, milestoneId }: ATPDetailsDirectStakeItemProps) => {
+export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, atp, onClaimSuccess, onWithdrawSuccess, atpType, registryAddress, milestoneId }: ATPDetailsDirectStakeItemProps) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false)
   const { symbol, decimals } = useStakingAssetTokenDetails()
@@ -44,7 +44,18 @@ export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion,
   const { isRewardsClaimable } = useIsRewardsClaimable()
 
   const stakeRollupAddress = stake.rollupAddress as Address
-  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(stake.attesterAddress as Address, stakeRollupAddress)
+  // See `useAttesterViewBestEffort`: the live record may live on a
+  // different rollup than the indexer-recorded deposit rollup, especially
+  // for stakes deposited with `moveWithRollup = true`. Use `effectiveRollup`
+  // (and its matching on-chain version) for any unstake write so the
+  // Staker routes to where the stake actually lives. Indexer hint
+  // short-circuits the probe when present.
+  const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, effectiveRollup, refetch: refetchStatus } = useSequencerStatus(
+    stake.attesterAddress as Address,
+    stakeRollupAddress,
+    { effectiveRollup: stake.effectiveRollup, moveWithRollup: stake.moveWithRollup },
+  )
+  const { version: effectiveRollupVersion } = useRollupVersionFor(effectiveRollup)
   const { withdrawalDelayDays } = useGovernanceConfig()
 
   const {
@@ -391,8 +402,7 @@ export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion,
                   <WithdrawalActions
                     stakerAddress={stakerAddress}
                     attesterAddress={stake.attesterAddress as Address}
-                    rollupVersion={rollupVersion}
-                    rollupAddress={stakeRollupAddress}
+                    rollupVersion={effectiveRollupVersion}
                     status={status}
                     canFinalize={canFinalize}
                     actualUnlockTime={actualUnlockTime}

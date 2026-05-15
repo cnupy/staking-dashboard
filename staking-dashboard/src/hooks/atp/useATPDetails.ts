@@ -3,7 +3,24 @@ import { config } from '@/config'
 import type { ATPData, StakeStatus } from './index'
 import { stringToBigInt } from '@/utils/atpFormatters'
 
-export interface DirectStake {
+/**
+ * Indexer-supplied hint: which rollup currently holds the live record for
+ * this stake, plus the decoded `moveWithRollup` from the originating tx.
+ * Used by the dashboard's unstake-routing probe to short-circuit on the
+ * fast path; null `moveWithRollup` means the probe should run normally.
+ *
+ * Non-optional here even though the wire-format types declare both fields
+ * optional. `transformATPDetailsResponse` normalises missing values to
+ * `(rollupAddress, null)` so this contract holds for everything that
+ * leaves the hook. Consumers can rely on the concrete shape without
+ * extra null-guards.
+ */
+interface EffectiveRollupHints {
+  effectiveRollup: `0x${string}`
+  moveWithRollup: boolean | null
+}
+
+export interface DirectStake extends EffectiveRollupHints {
   attesterAddress: string
   operatorAddress: string
   rollupAddress: string
@@ -17,7 +34,7 @@ export interface DirectStake {
   status: StakeStatus
 }
 
-export interface Delegation {
+export interface Delegation extends EffectiveRollupHints {
   providerId: number
   providerName?: string
   providerLogo?: string
@@ -68,10 +85,21 @@ const transformATPDetailsResponse = (response: ATPDetailsResponse, atpData: ATPD
     summary: {
       totalStaked: stringToBigInt(response.summary.totalStaked)
     },
-    directStakes: response.directStakes,
+    // Normalise the indexer's fast-path hint into a concrete shape so
+    // the rest of the dashboard can treat `effectiveRollup` /
+    // `moveWithRollup` as always-present. The API handler today always
+    // emits both fields, but the wire-format types mark them optional
+    // (back-compat hedge) — defaulting here is the firewall.
+    directStakes: response.directStakes.map(stake => ({
+      ...stake,
+      effectiveRollup: (stake.effectiveRollup ?? stake.rollupAddress) as `0x${string}`,
+      moveWithRollup: stake.moveWithRollup ?? null,
+    })),
     delegations: response.delegations.map(delegation => ({
       ...delegation,
-      stakedAmount: stringToBigInt(delegation.stakedAmount)
+      stakedAmount: stringToBigInt(delegation.stakedAmount),
+      effectiveRollup: (delegation.effectiveRollup ?? delegation.rollupAddress) as `0x${string}`,
+      moveWithRollup: delegation.moveWithRollup ?? null,
     }))
   }
 }

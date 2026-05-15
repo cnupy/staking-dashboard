@@ -41,6 +41,13 @@ export interface PendingDirectStake {
   txHash: string
   timestamp: number
   createdAt: number // When the entry was added (for cleanup)
+  /**
+   * Whether the deposit was submitted with `moveWithRollup = true`. Optional
+   * for backward compatibility with entries written before this field
+   * existed; the aggregator defaults missing values to `true` because every
+   * pre-existing dashboard deposit used that path.
+   */
+  moveWithRollup?: boolean
 }
 
 /**
