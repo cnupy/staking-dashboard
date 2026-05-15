@@ -253,9 +253,9 @@ variable "db_password" {
 }
 
 variable "db_instance_class" {
-  description = "Aurora instance class (defaults to prod-safe db.r7g.2xlarge, downsized in non-prod)"
+  description = "Aurora instance class. `bootstrap.sh` always passes this as `-var`, defaulting to db.t4g.medium for both prod and non-prod. This module-level default matches the bootstrap default so a direct `terraform apply` (without bootstrap.sh) doesn't silently propose resizing existing instances."
   type        = string
-  default     = "db.r7g.2xlarge"
+  default     = "db.t4g.medium"
 }
 
 # Note: Aurora automatically manages storage - it grows automatically from 10GB to 128TB

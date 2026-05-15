@@ -76,7 +76,12 @@ resource "aws_ssm_parameter" "db_password" {
 resource "aws_rds_cluster" "atp_indexer" {
   cluster_identifier     = "${local.full_name}-aurora-cluster"
   engine                 = "aurora-postgresql"
-  engine_version         = "16.8"
+  # Bumped from 16.8 → 16.11 to match the AWS auto-minor upgrade applied
+  # during a maintenance window. AWS does not permit engine_version
+  # downgrades, so any drift between this value and the deployed
+  # version will fail to apply. Paired with `ignore_changes` below so
+  # future auto-minor upgrades don't recreate the drift.
+  engine_version         = "16.11"
   database_name          = "postgres"
   master_username        = var.db_username
   master_password        = local.effective_db_password
