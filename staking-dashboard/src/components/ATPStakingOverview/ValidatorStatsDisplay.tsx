@@ -42,7 +42,7 @@ export const ValidatorStatsDisplay = ({
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 bg-parchment" />
           <span className="text-sm font-oracle-standard text-parchment uppercase tracking-wide">
-            Validator Capacity
+            Sequencer Capacity
           </span>
         </div>
         {stakeableAtps.length > 1 && (
@@ -62,7 +62,7 @@ export const ValidatorStatsDisplay = ({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
         <div>
-          <div className="text-xs text-parchment/60 uppercase tracking-wide mb-1">Total Validators</div>
+          <div className="text-xs text-parchment/60 uppercase tracking-wide mb-1">Total Sequencers</div>
           <div className="font-mono text-lg font-bold text-parchment">
             {totalValidatorCount}
           </div>
@@ -76,7 +76,7 @@ export const ValidatorStatsDisplay = ({
       </div>
 
       <div className="text-xs text-parchment/60 border-t border-parchment/20 pt-3">
-        Each validator requires {formatTokenAmount(activationThreshold, decimals, symbol)} minimum stake
+        Each sequencer requires {formatTokenAmount(activationThreshold, decimals, symbol)} minimum stake
       </div>
 
       {/* ATP Breakdown */}
@@ -86,7 +86,7 @@ export const ValidatorStatsDisplay = ({
             By Token Vault
           </div>
           {sortedStakeableAtps.map((atp) => {
-            const atpValidators = activationThreshold && atp.stakeableAmount
+            const atpSequencers = activationThreshold && atp.stakeableAmount
               ? Number(atp.stakeableAmount / activationThreshold)
               : 0
             const displayNumber = atp.sequentialNumber || '?'
@@ -101,7 +101,7 @@ export const ValidatorStatsDisplay = ({
                     {formatTokenAmount(atp.stakeableAmount || 0n, decimals, symbol)}
                   </span>
                   <span className="text-sm font-bold text-parchment">
-                    {atpValidators} validator{atpValidators !== 1 ? 's' : ''}
+                    {atpSequencers} sequencer{atpSequencers !== 1 ? 's' : ''}
                   </span>
                 </div>
               </div>

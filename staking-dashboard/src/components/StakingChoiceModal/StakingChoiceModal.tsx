@@ -102,7 +102,7 @@ export const StakingChoiceModal = ({ isOpen, onClose, selectedAtp }: StakingChoi
               </div>
             </div>
 
-            {/* Register Your Validator Option */}
+            {/* Register Your Sequencer Option */}
             <div className="bg-parchment/5 border border-parchment/20 p-6 hover:border-chartreuse/50 hover:bg-chartreuse/5 transition-all">
               <div className="flex flex-col items-center text-center h-full">
                 {/* Icon */}

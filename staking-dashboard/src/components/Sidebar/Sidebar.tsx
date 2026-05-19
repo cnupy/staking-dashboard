@@ -45,7 +45,7 @@ export default function Sidebar() {
                   : styles.link
               }
             >
-              Register Validator
+              Register Sequencer
             </Link>
           </li>
         </ul>

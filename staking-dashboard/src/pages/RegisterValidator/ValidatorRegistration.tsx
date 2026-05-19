@@ -339,9 +339,9 @@ export default function ValidatorRegistration() {
     <div className={`page-content ${styles.registerView}`}>
       <div className={`page-header ${styles.sectionHeader}`}>
         <div>
-          <h2>Register your Validator</h2>
+          <h2>Register your Sequencer</h2>
           <p>
-            Follow these steps to register and stake with your validator node
+            Follow these steps to register and stake with your sequencer node
           </p>
         </div>
       </div>
@@ -350,7 +350,7 @@ export default function ValidatorRegistration() {
         <RegistrationPreInfo onStartRegistration={handleStartRegistration} />
       ) : !isConnected ? (
         <div className={styles.connectWalletPrompt}>
-          <p>Connect your wallet to register as a validator</p>
+          <p>Connect your wallet to register as a sequencer</p>
           <ConnectButton />
         </div>
       ) : (
@@ -499,7 +499,7 @@ export default function ValidatorRegistration() {
           {registrationCompleted && (
             <div className={styles.successMessageCompact}>
               <span className={styles.successIcon}>✓</span>
-              <span>Successfully registered validator and staked</span>
+              <span>Successfully registered sequencer and staked</span>
             </div>
           )}
         </div>

@@ -6,7 +6,7 @@ export const STAKING_STEPS = {
     title: "Select Token Position to stake",
   },
   SET_VALIDATOR_ADDRESS: {
-    title: "Input your Validator Address and confirm it's up and synced",
+    title: "Input your Sequencer Address and confirm it's up and synced",
   },
   SET_OPERATOR_ADDRESS: {
     title: "Set Operator Address",
@@ -18,7 +18,7 @@ export const STAKING_STEPS = {
     title: "Approve token spending",
   },
   UPLOAD_VALIDATOR_KEYS: {
-    title: "Upload Validator Keys",
+    title: "Upload Sequencer Keys",
   },
   STAKE: {
     title: "Stake",

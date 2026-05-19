@@ -25,7 +25,7 @@ export const StatCard = ({ title, value, change, delay }: StatCardProps) => {
           <TooltipIcon
             content={
               title === "Total Value Locked" ? "Total value of all AZTEC tokens currently staked in the protocol." :
-              title === "Current APR" ? "Average annual percentage rate for staking rewards across all validators." :
+              title === "Current APR" ? "Average annual percentage rate for staking rewards across all sequencers." :
               title === "Total Stakes" ? "Total number of staking positions in the protocol." :
               "Total AZTEC tokens distributed as staking rewards to all participants."
             }

@@ -40,10 +40,10 @@ export default function StakingProviderDetailPage() {
     <div className="space-y-6">
       <PageHeader
         title={applyHeroItalics("Selected Provider")}
-        description="Stake funds through existing validators"
+        description="Stake funds through existing sequencers"
         backTo="/providers"
         backLabel="Back to Delegate"
-        tooltip="Delegate your tokens to this provider. They will handle validator operations while you earn staking rewards. Review their commission rate and performance metrics before proceeding."
+        tooltip="Delegate your tokens to this provider. They will handle sequencer operations while you earn staking rewards. Review their commission rate and performance metrics before proceeding."
       />
 
       <ProviderOverview provider={provider} />

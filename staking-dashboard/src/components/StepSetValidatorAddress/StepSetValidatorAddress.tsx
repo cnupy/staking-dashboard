@@ -21,7 +21,7 @@ export default function StepSetValidatorAddress({
   return (
     <div className={styles.validatorContainer}>
       <div className={styles.stepDescription}>
-        Want to run a validator?{" "}
+        Want to run a sequencer?{" "}
         <a
           href="https://docs.aztec.network/validators"
           target="_blank"
@@ -63,7 +63,7 @@ export default function StepSetValidatorAddress({
             onChange={(e) => onValidatorRunningChange(e.target.checked)}
             disabled={!canInput}
           />
-          My validator is up and running
+          My sequencer is up and running
         </label>
       </div>
     </div>

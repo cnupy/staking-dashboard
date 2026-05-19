@@ -213,7 +213,7 @@ export const RegistrationUploadKeys = () => {
               </span>
             </div>
             <p className="text-xs text-parchment/70 mb-3">
-              Generate your validator BLS keys
+              Generate your sequencer BLS keys
             </p>
             <a
               href="https://docs.aztec.network/the_aztec_network/setup/sequencer_management#step-2-move-keystore-to-docker-directory"

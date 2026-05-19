@@ -262,7 +262,7 @@ export const StakeFlowAtpSelection = ({ columns = 3, itemsPerPage: customItemsPe
           <p className="text-xs text-parchment/50">
             {isError
               ? "Please try again or check your connection"
-              : "You need to have Token Vaults to register as a validator"
+              : "You need to have Token Vaults to register as a sequencer"
             }
           </p>
         </div>

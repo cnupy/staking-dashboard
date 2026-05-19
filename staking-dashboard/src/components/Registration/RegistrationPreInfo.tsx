@@ -38,7 +38,7 @@ export const RegistrationPreInfo = ({ onStartRegistration }: RegistrationPreInfo
             <div className="w-1.5 h-1.5 bg-chartreuse mt-2 flex-shrink-0" />
             <div>
               <div className="text-sm text-parchment font-medium">Sequencer keystores</div>
-              <div className="text-xs text-parchment/60 mt-0.5">Validator key files ready to upload</div>
+              <div className="text-xs text-parchment/60 mt-0.5">Sequencer key files ready to upload</div>
             </div>
           </div>
           <div className="flex items-start gap-3">

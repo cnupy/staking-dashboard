@@ -84,7 +84,7 @@ export default function StepUploadKeys({
   return (
     <div className={styles.keysContainer}>
       <div className={styles.stepDescription}>
-        Upload your validator keys and provide necessary validator
+        Upload your sequencer keys and provide necessary sequencer
         configuration.
       </div>
 
@@ -250,7 +250,7 @@ export default function StepUploadKeys({
             <option value="true">Yes</option>
           </select>
           <div className={styles.governanceNote}>
-            Whether validator follows network governance automatically.
+            Whether sequencer follows network governance automatically.
           </div>
         </div>
       </div>

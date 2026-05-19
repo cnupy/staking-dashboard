@@ -15,7 +15,7 @@ import { useRollupData } from "@/hooks/rollup/useRollupData";
 import { useStakerBalance } from "@/hooks/staker/useStakerBalance";
 import { useNCStakerStatus } from "@/hooks/staker/useNCStakerStatus";
 import { useBlockTimestamp } from "@/hooks/useBlockTimestamp";
-import { usePendingWithdrawals } from "@/hooks/governance";
+import { usePendingWithdrawals, useUserGovernancePower } from "@/hooks/governance";
 import { ExternalGovernanceModal } from "@/components/ExternalGovernanceModal";
 import { useTransactionCart } from "@/contexts/TransactionCartContext";
 import {
@@ -201,6 +201,22 @@ export const ATPStakingCard = ({
     (sum, w) => sum + w.amount,
     0n
   );
+  // Active governance voting power held by this vault's staker — tokens
+  // the operator (or beneficiary) explicitly deposited into the Governance
+  // contract, separate from any sequencer-stake delegation. This dashboard
+  // doesn't offer governance actions (vote, deposit, withdraw-from-gov);
+  // users must use the Aztec governance dashboard for those, so we surface
+  // a banner whenever this is non-zero so operators know to look there.
+  const { votingPower: stakerGovernancePower } = useUserGovernancePower({
+    stakerAddress: data.staker as Address | undefined,
+  });
+  const activeGovernanceAmount =
+    stakerGovernancePower.stakerPowers[0]?.power ?? 0n;
+  // Combined "tokens currently in governance" for this vault. Both active
+  // voting power and in-flight withdrawals from governance are tokens
+  // outside the sequencer-stake path that this dashboard can't act on.
+  const governanceTotalAmount = activeGovernanceAmount + pendingGovernanceAmount;
+  const hasGovernanceAllocation = governanceTotalAmount > 0n;
   const [isGovernanceModalOpen, setIsGovernanceModalOpen] = useState(false);
 
   const globalLockTimeDisplay = getTimeToClaimForATP(data, blockTimestamp);
@@ -554,6 +570,51 @@ export const ATPStakingCard = ({
           <Icon name="arrowRight" size="sm" />
         </button>
       </div>
+
+      {/* Governance allocation warning. Surfaces both active voting
+          power and pending governance withdrawals — neither path is
+          actionable from this dashboard. The button opens the same
+          external-frontends modal the Navbar's Governance button does. */}
+      {hasGovernanceAllocation && (
+        <div className="mb-6 p-3 border border-amber-400/40 bg-amber-400/10 flex items-start gap-3">
+          <Icon
+            name="info"
+            size="md"
+            className="text-amber-400 flex-shrink-0 mt-0.5"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-oracle-standard font-bold text-amber-400 uppercase tracking-wide mb-1">
+              Tokens in Governance
+            </div>
+            <div className="text-xs text-parchment/80 mb-2">
+              This Token Vault has{" "}
+              <span className="font-mono font-bold text-parchment">
+                {formatTokenAmount(governanceTotalAmount, decimals, symbol)}
+              </span>{" "}
+              allocated to the Governance contract
+              {pendingGovernanceAmount > 0n && activeGovernanceAmount > 0n && (
+                <>
+                  {" "}
+                  ({formatTokenAmount(activeGovernanceAmount, decimals, symbol)}{" "}
+                  active voting power,{" "}
+                  {formatTokenAmount(pendingGovernanceAmount, decimals, symbol)}{" "}
+                  pending withdrawal)
+                </>
+              )}
+              . These tokens are separate from sequencer stake and can't be
+              voted, withdrawn, or finalized from this dashboard — use the
+              Aztec governance dashboard to manage them.
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsGovernanceModalOpen(true)}
+              className="text-xs font-oracle-standard font-bold uppercase tracking-wider text-amber-400 underline hover:text-amber-300"
+            >
+              Open Governance Dashboard →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Total Funds - Full Width */}
       <div className="mb-6">

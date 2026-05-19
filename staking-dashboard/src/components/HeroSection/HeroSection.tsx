@@ -118,7 +118,7 @@ export const HeroSection = () => {
                             ? "Does not include queued attesters. Includes sequencers who initiated exits but have not yet finalized."
                             : stat.title === "Minimum Stake Required"
                               ? "The minimum amount of tokens required to create a single stake position"
-                              : "Total tokens distributed as rewards to all validators."
+                              : "Total tokens distributed as rewards to all sequencers."
                     }
                     size="md"
                     maxWidth="max-w-sm"

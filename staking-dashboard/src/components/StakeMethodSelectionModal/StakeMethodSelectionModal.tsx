@@ -53,13 +53,13 @@ export default function StakeMethodSelectionModal({
             >
               <div className={styles.optionIcon}>⚙️</div>
               <div className={styles.optionContent}>
-                <h3>Register Your Validator</h3>
+                <h3>Register Your Sequencer</h3>
                 <p>
                   Register as an operator if you're already running your own
-                  validator and want others to delegate to you.
+                  sequencer and want others to delegate to you.
                 </p>
                 <ul>
-                  <li>Requires running validator infrastructure</li>
+                  <li>Requires running sequencer infrastructure</li>
                   <li>Higher potential rewards</li>
                 </ul>
               </div>

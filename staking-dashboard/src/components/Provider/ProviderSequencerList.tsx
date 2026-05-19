@@ -165,7 +165,7 @@ export const ProviderSequencerList = ({ stakes }: ProviderSequencerListProps) =>
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-parchment/60 hover:text-chartreuse transition-colors flex-shrink-0"
-                                title="View in validator dashboard"
+                                title="View in sequencer dashboard"
                               >
                                 <Icon name="externalLink" size="sm" />
                               </a>
