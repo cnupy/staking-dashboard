@@ -6,6 +6,23 @@ import type { StakeStatus } from './atp.types';
 
 export interface StakingStats {
   totalStakes: number;
+  /**
+   * Currently VALIDATING attesters on the canonical rollup. Read from
+   * chain (`getActiveAttesterCount`) — authoritative for the dashboard's
+   * "active sequencer count" headline.
+   */
+  activeStakes: number;
+  /**
+   * Attesters whose latest withdraw event is an `initiateWithdraw` (not
+   * yet finalized). Derived from indexer event tables.
+   */
+  exitingStakes: number;
+  /**
+   * Registered attesters that aren't active or exiting — typically
+   * slashed below ejection threshold. Derived by subtraction
+   * (`totalStakes - activeStakes - exitingStakes`), clamped to 0.
+   */
+  zombieStakes: number;
   delegatedStakes: number;
   atpDelegatedStakes: number;
   erc20DelegatedStakes: number;
@@ -18,7 +35,15 @@ export interface StakingStats {
 }
 
 export interface StakingSummaryResponse {
+  /** Value locked across the full registered set (active + exiting + zombie). */
   totalValueLocked: string;
+  /**
+   * Value locked by currently-active sequencers only. The dashboard
+   * displays this prominently as "Total Value Staked"; the leftover
+   * (totalValueLocked - activeValueLocked) is the value held by
+   * exiting/zombie attesters.
+   */
+  activeValueLocked: string;
   totalStakers: number;
   currentAPR: number;
   stats: StakingStats;

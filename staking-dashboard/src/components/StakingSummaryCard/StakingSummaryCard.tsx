@@ -24,11 +24,14 @@ const formatAPR = (apr: number): string => {
 const MetricCard = ({
   label,
   value,
+  subline,
   isLoading,
   color = 'parchment'
 }: {
   label: string
   value: string
+  /** Small text below the main value (e.g. "+12 exiting · +4 zombie"). Hidden when undefined. */
+  subline?: string
   isLoading: boolean
   color?: 'parchment' | 'chartreuse' | 'aqua' | 'orchid'
 }) => {
@@ -40,9 +43,16 @@ const MetricCard = ({
       {isLoading ? (
         <div className="h-8 bg-parchment/10 animate-pulse rounded" />
       ) : (
-        <div className={`font-arizona-serif text-2xl sm:text-3xl font-medium text-${color}`}>
-          {value}
-        </div>
+        <>
+          <div className={`font-arizona-serif text-2xl sm:text-3xl font-medium text-${color}`}>
+            {value}
+          </div>
+          {subline && (
+            <div className="font-mono text-[10px] sm:text-xs text-parchment/50 mt-1">
+              {subline}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -56,14 +66,49 @@ export const StakingSummaryCard = () => {
   const { data, isLoading, error, refetch } = useStakingSummary()
   const { symbol, decimals } = useStakingAssetTokenDetails()
 
-  // Format values using formatTokenAmount
-  const totalValueLocked = data?.totalValueLocked
-    ? formatTokenAmount(BigInt(data.totalValueLocked), decimals, symbol)
+  // Format values using formatTokenAmount. We headline the
+  // currently-active stake (`activeValueLocked`) rather than the
+  // historic "all locked" total — productive sequencer stake is what
+  // operators actually care about. The inactive remainder shows up as a
+  // small subline.
+  const totalLockedBig = data?.totalValueLocked ? BigInt(data.totalValueLocked) : undefined
+  const activeLockedBig = data?.activeValueLocked !== undefined
+    ? BigInt(data.activeValueLocked)
+    : totalLockedBig
+  const totalValueStaked = activeLockedBig !== undefined
+    ? formatTokenAmount(activeLockedBig, decimals, symbol)
     : '0'
 
   const activationThreshold = data?.stats.activationThreshold
     ? formatTokenAmount(BigInt(data.stats.activationThreshold), decimals, symbol)
     : '0'
+
+  // Headline sequencer count is `activeStakes` (chain-authoritative).
+  // Falls back to `totalStakers` for back-compat with older indexer
+  // builds that haven't shipped the field yet.
+  const activeStakesCount = data?.stats.activeStakes ?? data?.totalStakers ?? 0
+  const exitingStakesCount = data?.stats.exitingStakes ?? 0
+  const zombieStakesCount = data?.stats.zombieStakes ?? 0
+
+  // Build the "+X exiting · +Y zombie" subline. Only the non-zero
+  // buckets render so the line stays compact in steady state.
+  const sequencerSubline = (() => {
+    const parts: string[] = []
+    if (exitingStakesCount > 0) parts.push(`+${formatNumber(exitingStakesCount)} exiting`)
+    if (zombieStakesCount > 0) parts.push(`+${formatNumber(zombieStakesCount)} zombie`)
+    return parts.length > 0 ? parts.join(' · ') : undefined
+  })()
+
+  // For the TVL subline we show the token amount held by inactive
+  // sequencers. Approximate (zombies are below activation threshold,
+  // but we use the API's reported delta so this matches whatever the
+  // indexer's accounting says).
+  const stakeSubline = (() => {
+    if (totalLockedBig === undefined || activeLockedBig === undefined) return undefined
+    const inactive = totalLockedBig - activeLockedBig
+    if (inactive <= 0n) return undefined
+    return `${formatTokenAmount(inactive, decimals, symbol)} exiting or zombie`
+  })()
 
   // Error state
   if (error && !data) {
@@ -93,14 +138,16 @@ export const StakingSummaryCard = () => {
       {/* Main Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          label="Total Value Locked"
-          value={totalValueLocked}
+          label="Total Value Staked"
+          value={totalValueStaked}
+          subline={stakeSubline}
           isLoading={isLoading}
           color="chartreuse"
         />
         <MetricCard
-          label="Total Stakes"
-          value={data ? formatNumber(data.totalStakers) : '0'}
+          label="Active Sequencers"
+          value={formatNumber(activeStakesCount)}
+          subline={sequencerSubline}
           isLoading={isLoading}
           color="aqua"
         />
