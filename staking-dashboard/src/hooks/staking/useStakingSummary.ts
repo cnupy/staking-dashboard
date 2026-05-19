@@ -3,6 +3,12 @@ import { config } from '@/config'
 
 export interface StakingStats {
   totalStakes: number
+  /** Currently-validating attesters (authoritative from chain). */
+  activeStakes?: number
+  /** Attesters mid-exit (initiate without finalize). Derived indexer-side. */
+  exitingStakes?: number
+  /** Registered minus active minus exiting (typically slashed-below-ejection). */
+  zombieStakes?: number
   delegatedStakes: number
   directStakes: number
   activeProviders: number
@@ -13,6 +19,8 @@ export interface StakingStats {
 
 export interface StakingSummaryResponse {
   totalValueLocked: string
+  /** Value locked by currently-active sequencers only. Optional for back-compat. */
+  activeValueLocked?: string
   totalStakers: number
   currentAPR: number
   stats: StakingStats

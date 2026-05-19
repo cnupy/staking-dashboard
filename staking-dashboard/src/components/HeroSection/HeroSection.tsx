@@ -25,14 +25,48 @@ export const HeroSection = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Format the data from API
-  const totalValueLocked = stakingData?.totalValueLocked
-    ? formatTokenAmount(BigInt(stakingData.totalValueLocked), decimals, symbol)
+  // Format the data from API. We show active stake prominently; the
+  // exiting/zombie portion is surfaced as a smaller subline so the
+  // primary number reflects productive sequencers only.
+  const totalStakedFallback = stakingData?.totalValueLocked
+    ? BigInt(stakingData.totalValueLocked)
+    : undefined;
+  const activeStakedRaw =
+    stakingData?.activeValueLocked !== undefined
+      ? BigInt(stakingData.activeValueLocked)
+      : totalStakedFallback;
+  const totalValueStaked = activeStakedRaw !== undefined
+    ? formatTokenAmount(activeStakedRaw, decimals, symbol)
     : "---";
 
-  const totalStakers = stakingData?.totalStakers
-    ? new Intl.NumberFormat("en-US").format(stakingData.totalStakers)
+  const activeStakesCount =
+    stakingData?.stats.activeStakes ?? stakingData?.totalStakers;
+  const exitingStakesCount = stakingData?.stats.exitingStakes ?? 0;
+  const zombieStakesCount = stakingData?.stats.zombieStakes ?? 0;
+
+  const activeSequencers = activeStakesCount !== undefined
+    ? new Intl.NumberFormat("en-US").format(activeStakesCount)
     : "---";
+
+  // Subline shown beneath the main numbers when there are any non-active
+  // sequencers. Format: "+12 exiting · +4 zombie" — only the non-zero
+  // buckets render.
+  const buildSequencerSubline = () => {
+    const parts: string[] = [];
+    if (exitingStakesCount > 0) parts.push(`+${exitingStakesCount} exiting`);
+    if (zombieStakesCount > 0) parts.push(`+${zombieStakesCount} zombie`);
+    return parts.length > 0 ? parts.join(" · ") : undefined;
+  };
+
+  const buildStakeSubline = () => {
+    if (!stakingData) return undefined;
+    const totalVL = totalStakedFallback;
+    const activeVL = activeStakedRaw;
+    if (totalVL === undefined || activeVL === undefined) return undefined;
+    const inactiveValue = totalVL - activeVL;
+    if (inactiveValue <= 0n) return undefined;
+    return `${formatTokenAmount(inactiveValue, decimals, symbol)} exiting or zombie`;
+  };
 
   const currentAPR = stakingData?.currentAPR
     ? `${stakingData.currentAPR.toFixed(1)}%`
@@ -40,24 +74,28 @@ export const HeroSection = () => {
 
   const stats = [
     {
-      title: "Total Value Locked",
-      value: isLoading ? "..." : totalValueLocked,
-      description: "Total value currently staked in the protocol",
+      title: "Total Value Staked",
+      value: isLoading ? "..." : totalValueStaked,
+      description: "Locked in currently-active sequencers",
+      subline: isLoading ? undefined : buildStakeSubline(),
     },
     {
       title: "Estimated APR",
       value: isLoading ? "..." : currentAPR,
       description: "Adjusted for queued attesters",
+      subline: undefined,
     },
     {
-      title: "Total Number of Sequencers",
-      value: isLoading ? "..." : totalStakers,
-      description: "Active, or exiting",
+      title: "Active Sequencers",
+      value: isLoading ? "..." : activeSequencers,
+      description: "Currently validating on canonical rollup",
+      subline: isLoading ? undefined : buildSequencerSubline(),
     },
     {
       title: "Minimum Stake Required",
       value: isLoadingThreshold ? "..." : formattedThreshold,
       description: "Per stake position",
+      subline: undefined,
     },
   ];
 
@@ -110,12 +148,12 @@ export const HeroSection = () => {
                   </div>
                   <TooltipIcon
                     content={
-                      stat.title === "Total Value Locked"
-                        ? "Total value of all tokens currently staked in the protocol"
+                      stat.title === "Total Value Staked"
+                        ? "Value locked by currently-active sequencers only. Stake from exiting and zombie sequencers is excluded from this number — see the subline for the leftover."
                         : stat.title === "Estimated APR"
                           ? "Estimated annual return based on current rewards and total sequencers (including queued). Actual returns may vary."
-                          : stat.title === "Total Number of Sequencers"
-                            ? "Does not include queued attesters. Includes sequencers who initiated exits but have not yet finalized."
+                          : stat.title === "Active Sequencers"
+                            ? "Currently-validating sequencers on the canonical rollup. Excludes queued, exiting, and zombie (slashed-below-threshold) sequencers — see the subline for those counts."
                             : stat.title === "Minimum Stake Required"
                               ? "The minimum amount of tokens required to create a single stake position"
                               : "Total tokens distributed as rewards to all sequencers."
@@ -129,6 +167,11 @@ export const HeroSection = () => {
                 >
                   {stat.value}
                 </div>
+                {stat.subline && (
+                  <div className="font-mono text-[10px] sm:text-xs text-parchment/50 mb-1">
+                    {stat.subline}
+                  </div>
+                )}
                 <div className="font-md-thermochrome text-xs sm:text-sm lg:text-xs xl:text-sm text-aqua">
                   {stat.description}
                 </div>
