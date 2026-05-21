@@ -58,6 +58,31 @@ export async function getActivationThreshold(
 }
 
 /**
+ * Get local ejection threshold from Rollup contract — the effective-
+ * balance floor below which an attester is classified ZOMBIE (still
+ * registered, no longer validating). Returns '0' on RPC failure so
+ * callers degrade to "no threshold" (treat no attesters as zombies)
+ * rather than crashing.
+ */
+export async function getLocalEjectionThreshold(
+  rollupAddress: `0x${string}` | string,
+  client: any
+): Promise<string> {
+  try {
+    const threshold = await client.readContract({
+      address: rollupAddress as Address,
+      abi: ROLLUP_ABI,
+      functionName: "getLocalEjectionThreshold",
+    });
+
+    return (threshold as bigint).toString();
+  } catch (error) {
+    console.error(`Failed to get local ejection threshold for ${rollupAddress}:`, error);
+    return '0';
+  }
+}
+
+/**
  * Gets reward configuration from rollup contract
  */
 export async function getRewardConfig(rollupAddress: string, client: PublicClient) {

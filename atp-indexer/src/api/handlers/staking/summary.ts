@@ -1,9 +1,10 @@
 import type { Context } from 'hono';
 import { db } from 'ponder:api';
 import { count, sql } from 'drizzle-orm';
-import { getActivationThreshold, calculateAPR, getActiveAttesterCount } from '../../../utils/rollup';
+import { getActivationThreshold, getLocalEjectionThreshold, calculateAPR, getActiveAttesterCount } from '../../../utils/rollup';
 import { getCanonicalRollupAddress } from '../../utils/canonical-rollup';
 import { getPublicClient } from '../../../utils/viem-client';
+import { classifyAttesterStatus } from '../../utils/attester-state';
 import type { StakingSummaryResponse } from '../../types/staking.types';
 import {
   stakedWithProvider,
@@ -12,6 +13,7 @@ import {
   failedDeposit,
   provider,
   atpPosition,
+  slashed,
   withdrawInitiated,
   withdrawFinalized,
   deposit
@@ -38,6 +40,7 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
     // while other tables help categorize the source (ATP vs ERC20, direct vs provider).
     const [
       activationThreshold,
+      ejectionThreshold,
       delegationsCountResult,       // ATP provider delegations
       erc20DelegationsCountResult,  // ERC20 provider delegations
       directStakesCountResult,      // ATP direct stakes
@@ -48,16 +51,24 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
       totalDepositsCountResult,     // ALL deposits (source of truth for total stakes)
       currentAPR,
       // Per-attester latest event timestamps. Used to compute the
-      // "currently exiting" set (latest withdrawInitiated > latest
-      // withdrawFinalized) without scanning the full event tables.
+      // EXITING bucket (latest initiate vs latest finalize) and — for
+      // the slashed-attester apportionment loop below — to classify
+      // each slashed attester via the shared `classifyAttesterStatus`
+      // helper.
+      latestDepositsByAttester,
       latestInitiatesByAttester,
       latestFinalizesByAttester,
+      // Per-attester slash totals. Used to deduct slashed amounts from
+      // headline TVL (so the dashboard reflects what's actually still in
+      // the contract) and to classify zombies (slashed-below-ejection).
+      slashSumsByAttester,
       // Authoritative active count from chain. `getActiveAttesterCount`
       // returns the VALIDATING set on the canonical rollup — excludes
       // ZOMBIE and EXITING by protocol design.
       activeAttesterCount
     ] = await Promise.all([
       getActivationThreshold(rollupAddress, client),
+      getLocalEjectionThreshold(rollupAddress, client),
       db.select({ count: count() }).from(stakedWithProvider),
       db.select({ count: count() }).from(erc20StakedWithProvider),
       db.select({ count: count() }).from(staked),
@@ -67,6 +78,13 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
       db.select({ count: count() }).from(atpPosition),
       db.select({ count: count() }).from(deposit),
       calculateAPR(rollupAddress, client),
+      db
+        .select({
+          attesterAddress: deposit.attesterAddress,
+          maxTimestamp: sql<bigint>`MAX(${deposit.timestamp})`.as('max_deposit_ts'),
+        })
+        .from(deposit)
+        .groupBy(deposit.attesterAddress),
       db
         .select({
           attesterAddress: withdrawInitiated.attesterAddress,
@@ -81,6 +99,13 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
         })
         .from(withdrawFinalized)
         .groupBy(withdrawFinalized.attesterAddress),
+      db
+        .select({
+          attesterAddress: slashed.attesterAddress,
+          totalAmount: sql<bigint>`SUM(${slashed.amount})`.as('total_slashed'),
+        })
+        .from(slashed)
+        .groupBy(slashed.attesterAddress),
       getActiveAttesterCount(rollupAddress, client)
     ]);
 
@@ -128,32 +153,22 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
     // NOTE: Do NOT subtract failedDepositsLength here - failed deposits are never
     // added to the deposit table (they trigger a separate FailedDeposit event)
     const totalStakes = totalDepositsCount - withdrawnCount;
-    const totalValueLocked = BigInt(activationThreshold) * BigInt(totalStakes);
 
-    // Split `totalStakes` into ACTIVE / EXITING / ZOMBIE buckets so the
-    // dashboard can show the productive-stake number prominently and
-    // de-emphasise the rest.
-    //
-    // ACTIVE comes straight from the chain (VALIDATING on canonical
-    // rollup). Authoritative.
-    //
-    // EXITING is derived from the indexer: attesters whose latest
-    // `withdrawInitiated` timestamp exceeds their latest
-    // `withdrawFinalized` (or who have an initiate but no finalize at
-    // all). Same logic the canonical-rollup-updated handler uses for
-    // pinning effectiveRollup.
-    //
-    // ZOMBIE is derived by subtraction: total registered - active -
-    // exiting. We don't independently track zombie state (would require
-    // per-attester slash accounting + ejection threshold), and accept
-    // that this includes any small drift between the indexer's view of
-    // "still registered" and the chain's view (e.g., attesters who
-    // deposited on a now-legacy rollup, never migrated, and aren't on
-    // canonical's active set).
+    // Per-attester latest-event maps. Used both to compute the EXITING
+    // bucket and to apportion slashed amounts across status buckets.
+    const latestDepositByAttester = new Map<string, bigint>();
+    for (const r of latestDepositsByAttester) {
+      latestDepositByAttester.set(r.attesterAddress, r.maxTimestamp);
+    }
+    const latestInitiateByAttester = new Map<string, bigint>();
+    for (const r of latestInitiatesByAttester) {
+      latestInitiateByAttester.set(r.attesterAddress, r.maxTimestamp);
+    }
     const latestFinalizeByAttester = new Map<string, bigint>();
     for (const r of latestFinalizesByAttester) {
       latestFinalizeByAttester.set(r.attesterAddress, r.maxTimestamp);
     }
+
     let exitingCount = 0;
     for (const r of latestInitiatesByAttester) {
       const finalizeTs = latestFinalizeByAttester.get(r.attesterAddress);
@@ -161,13 +176,79 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
         exitingCount++;
       }
     }
-    const activeCount = Number(activeAttesterCount);
-    // Clamp to 0 — small drift between chain and indexer views can
-    // produce a transient negative, but the user-visible count must be
-    // a non-negative integer.
+
+    // Clamp `activeCount` to the indexer's view of the registered set.
+    // Chain (`getActiveAttesterCount`) and indexer (`totalStakes`) can
+    // drift by a block or two; if the chain reports `activeCount >
+    // totalStakes - exitingCount`, the dashboard's `totalVL − activeVL`
+    // subline math would go negative. Clamp keeps the invariant
+    // `0 ≤ activeCount ≤ totalStakes - exitingCount` so downstream
+    // values stay non-negative.
+    const rawActiveCount = Number(activeAttesterCount);
+    const activeCountCeiling = Math.max(0, totalStakes - exitingCount);
+    const activeCount = Math.min(rawActiveCount, activeCountCeiling);
     const zombieCount = Math.max(0, totalStakes - activeCount - exitingCount);
 
-    const activeValueLocked = BigInt(activationThreshold) * BigInt(activeCount);
+    // Slash apportionment by status. We need this to deduct slashed
+    // amounts from headline TVL — the deposit-time `stakedAmount` and
+    // the `activationThreshold × count` shortcut both overstate when
+    // any attester has been slashed. Classification uses the shared
+    // `classifyAttesterStatus` helper so the priority logic stays in
+    // one place.
+    const activationThresholdBig = BigInt(activationThreshold);
+    const ejectionThresholdBig = BigInt(ejectionThreshold);
+    const zombieSlashCutoff = activationThresholdBig > ejectionThresholdBig
+      ? activationThresholdBig - ejectionThresholdBig
+      : 0n;
+
+    let slashedActive = 0n;
+    let slashedExiting = 0n;
+    let slashedZombie = 0n;
+
+    for (const r of slashSumsByAttester) {
+      // An attester with a Slashed event MUST have a prior Deposit
+      // (the protocol can't slash a non-existent attester) — so
+      // `hasDeposit: true` is safe. `latestDeposit` may still be
+      // missing in pathological indexer states (event re-ordering);
+      // the classifier treats that the same as no-finalize-after-no-
+      // deposit (won't fall into EXITED) which is the right answer.
+      const status = classifyAttesterStatus({
+        hasDeposit: true,
+        latestDeposit: latestDepositByAttester.get(r.attesterAddress),
+        latestInitiate: latestInitiateByAttester.get(r.attesterAddress),
+        latestFinalize: latestFinalizeByAttester.get(r.attesterAddress),
+        totalSlashed: r.totalAmount,
+        zombieSlashCutoff,
+      });
+
+      switch (status) {
+        case "ACTIVE":
+          slashedActive += r.totalAmount;
+          break;
+        case "EXITING":
+          slashedExiting += r.totalAmount;
+          break;
+        case "ZOMBIE":
+          slashedZombie += r.totalAmount;
+          break;
+        // EXITED / NOT_REGISTERED: tokens are gone (or never there);
+        // their slashes don't affect on-contract TVL.
+      }
+    }
+
+    const slashedRegistered = slashedActive + slashedExiting + slashedZombie;
+
+    // Headline TVL math: start from the nominal value (count × threshold)
+    // and subtract the slashed amount for that bucket. Clamp at 0 to
+    // tolerate small drift between chain and indexer (e.g., reward
+    // accumulation we don't track could leave actual on-chain balance
+    // slightly above our computed effective balance, but never below
+    // zero).
+    const nominalTotal = activationThresholdBig * BigInt(totalStakes);
+    const totalValueLocked = nominalTotal > slashedRegistered ? nominalTotal - slashedRegistered : 0n;
+
+    const nominalActive = activationThresholdBig * BigInt(activeCount);
+    const activeValueLocked = nominalActive > slashedActive ? nominalActive - slashedActive : 0n;
 
     const response: StakingSummaryResponse = {
       totalValueLocked: totalValueLocked.toString(),

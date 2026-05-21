@@ -5,9 +5,10 @@ import { checksumAddress, normalizeAddress } from '../../../utils/address';
 import { getProviderMetadata } from '../../../utils/provider-metadata';
 import type { ProviderDetailsResponse } from '../../types/provider.types';
 import { fetchFailedDeposits, filterValidStakes } from '../../../utils/failed-deposits';
-import { getActivationThreshold } from '../../../utils/rollup';
+import { getActivationThreshold, getLocalEjectionThreshold } from '../../../utils/rollup';
 import { getCanonicalRollupAddress } from '../../utils/canonical-rollup';
 import { getPublicClient } from '../../../utils/viem-client';
+import { buildAttesterStateLookup } from '../../utils/attester-state';
 import {
   provider,
   stakedWithProvider,
@@ -28,8 +29,9 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
     const client = getPublicClient();
 
     const rollupAddress = await getCanonicalRollupAddress(client);
-    const [activationThreshold, providerData, allAtpDelegationsCount, allErc20DelegationsCount, allDirectStakesCount, allFailedDepositCount] = await Promise.all([
+    const [activationThreshold, ejectionThreshold, providerData, allAtpDelegationsCount, allErc20DelegationsCount, allDirectStakesCount, allFailedDepositCount] = await Promise.all([
       getActivationThreshold(rollupAddress, client),
+      getLocalEjectionThreshold(rollupAddress, client),
       db.select().from(provider).where(eq(provider.providerIdentifier, id)).limit(1),
       db.select({ count: count() }).from(stakedWithProvider),
       db.select({ count: count() }).from(erc20StakedWithProvider),
@@ -110,8 +112,20 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
     ];
     const validAllStakes = filterValidStakes(allStakes, failedDepositMap);
 
-    // Extract only the valid delegations (ignore direct stakes, they were just for FIFO)
-    const validDelegations = validAllStakes.filter(s => s._type === 'delegation');
+    // Build per-attester status + effective-balance lookup. Used to
+    // filter the provider's headline numbers to ACTIVE sequencers only
+    // (exiting / zombie sequencers don't validate) and to sum by
+    // effective balance instead of deposit-time amount.
+    const attesterState = await buildAttesterStateLookup({
+      db,
+      activationThreshold: BigInt(activationThreshold),
+      ejectionThreshold: BigInt(ejectionThreshold),
+    });
+
+    // Extract only the valid + ACTIVE delegations (ignore direct stakes — they were just for FIFO)
+    const validDelegations = validAllStakes
+      .filter(s => s._type === 'delegation')
+      .filter(s => attesterState(normalizeAddress(s.attesterAddress)).status === 'ACTIVE');
 
     // Calculate network total staked
     // All attempted stakes + all delegations (ATP + ERC20) - all failed deposits
@@ -120,13 +134,39 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
 
     const metadata = getProviderMetadata(providerRecord.providerIdentifier);
 
-    const providerSelfStakeCount = metadata?.providerSelfStake?.length || 0
+    // Self-stake roster: filter to ACTIVE attesters only and sum by
+    // effective balance. Self-stake addresses are inherently unique
+    // per provider so a single reduce is correct here.
+    const declaredSelfStake = metadata?.providerSelfStake ?? [];
+    const activeSelfStake = declaredSelfStake.filter(
+      addr => attesterState(normalizeAddress(addr)).status === 'ACTIVE',
+    );
+    const providerSelfStakeCount = activeSelfStake.length;
+    const totalProviderSelfStakes = activeSelfStake.reduce(
+      (sum, addr) => sum + attesterState(normalizeAddress(addr)).effectiveBalance,
+      0n,
+    );
 
-    // Calculate provider total staked amount + total provider self stake amount
-    const totalProviderSelfStakes = BigInt(providerSelfStakeCount) * BigInt(activationThreshold)
-    const totalDelegations = validDelegations.reduce((sum, stake) => {
-      return sum + BigInt(stake.stakedAmount);
-    }, 0n);
+    // Sum delegated stake using a per-attester slash dedupe: each row
+    // contributes its own `stakedAmount` (so a multi-deposit attester
+    // is sized correctly), but the slash deduction is applied once
+    // per UNIQUE attester. Without the dedupe, an attester appearing
+    // in multiple delegation rows would have their slashed amount
+    // subtracted twice — understating the headline.
+    let totalDelegations = 0n;
+    {
+      let nominal = 0n;
+      const seenAttesters = new Set<string>();
+      let totalSlashes = 0n;
+      for (const s of validDelegations) {
+        nominal += BigInt(s.stakedAmount);
+        const normalized = normalizeAddress(s.attesterAddress);
+        if (seenAttesters.has(normalized)) continue;
+        seenAttesters.add(normalized);
+        totalSlashes += attesterState(normalized).totalSlashed;
+      }
+      totalDelegations = nominal > totalSlashes ? nominal - totalSlashes : 0n;
+    }
     const totalStaked = totalDelegations + totalProviderSelfStakes
 
     const response: ProviderDetailsResponse = {
