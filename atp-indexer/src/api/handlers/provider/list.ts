@@ -5,9 +5,10 @@ import { checksumAddress, normalizeAddress } from '../../../utils/address';
 import { getAllProviderMetadata } from '../../../utils/provider-metadata';
 import type { ProviderListResponse } from '../../types/provider.types';
 import { fetchFailedDeposits, markStakesWithFailedDeposits } from '../../../utils/failed-deposits';
-import { getActivationThreshold } from '../../../utils/rollup';
+import { getActivationThreshold, getLocalEjectionThreshold } from '../../../utils/rollup';
 import { getCanonicalRollupAddress } from '../../utils/canonical-rollup';
 import { getPublicClient } from '../../../utils/viem-client';
+import { buildAttesterStateLookup } from '../../utils/attester-state';
 import {
   provider,
   stakedWithProvider,
@@ -28,8 +29,16 @@ export async function handleProviderList(c: Context): Promise<Response> {
     const providerIds = Array.from(metadata.keys());
 
     const rollupAddress = await getCanonicalRollupAddress(client);
-    const [activationThreshold, dbProviders, atpDelegations, erc20Delegations, allDirectStakes] = await Promise.all([
+    const [
+      activationThreshold,
+      ejectionThreshold,
+      dbProviders,
+      atpDelegations,
+      erc20Delegations,
+      allDirectStakes,
+    ] = await Promise.all([
       getActivationThreshold(rollupAddress, client),
+      getLocalEjectionThreshold(rollupAddress, client),
       db.select().from(provider).where(inArray(provider.providerIdentifier, providerIds)),
       db.select({
         providerIdentifier: stakedWithProvider.providerIdentifier,
@@ -59,6 +68,18 @@ export async function handleProviderList(c: Context): Promise<Response> {
       }).from(staked)
     ]);
 
+    // Build a per-attester status + effective-balance lookup. Used
+    // to filter the provider list (and "Not Associated" bucket) down
+    // to ACTIVE attesters only — exiting and zombie sequencers
+    // shouldn't inflate a provider's headline numbers — and to use
+    // effective balance (deposit - slashed) instead of deposit-time
+    // amount in the totals.
+    const attesterState = await buildAttesterStateLookup({
+      db,
+      activationThreshold: BigInt(activationThreshold),
+      ejectionThreshold: BigInt(ejectionThreshold),
+    });
+
     // Combine ATP-based and ERC20-based delegations
     const allDelegations = [...atpDelegations, ...erc20Delegations];
 
@@ -84,14 +105,42 @@ export async function handleProviderList(c: Context): Promise<Response> {
     ];
     const markedAllStakes = markStakesWithFailedDeposits(allStakes, failedDepositMap);
 
-    // Filter out failed deposits and unstaked (withdrawn) stakes
-    const isActiveStake = (s: { hasFailedDeposit: boolean; status?: string }) =>
-      !s.hasFailedDeposit && s.status !== 'UNSTAKED';
+    // Filter out failed deposits, unstaked, exiting, and zombie stakes.
+    // Provider headline numbers should reflect *productive* sequencers
+    // only — slashed-into-zombie or mid-exit sequencers no longer
+    // contribute validation work, so counting them is misleading.
+    const isActiveStake = (s: { hasFailedDeposit: boolean; status?: string; attesterAddress: string }) => {
+      if (s.hasFailedDeposit || s.status === 'UNSTAKED') return false;
+      // Per-attester lookup; non-existent attesters default to ACTIVE
+      // (no slash, no exit) which is the right answer for fresh stakes.
+      return attesterState(normalizeAddress(s.attesterAddress)).status === 'ACTIVE';
+    };
     const validAllStakes = markedAllStakes.filter(isActiveStake);
 
     // Separate back into delegations and direct stakes
     const validDelegations = validAllStakes.filter(s => s._type === 'delegation');
     const validDirectStakes = validAllStakes.filter(s => s._type === 'direct');
+
+    // Sum stake using a per-attester model. Each row contributes its
+    // own deposit amount (so a multi-deposit attester is correctly
+    // sized at `count × activationThreshold` nominal), but the slash
+    // deduction applies once per UNIQUE attester (slashing is per
+    // attester globally, not per delegation row). Without the dedupe,
+    // an attester with two stake rows + a slash of X would have X
+    // subtracted twice → headline understates real on-chain balance.
+    const sumEffectiveBalance = (stakes: { attesterAddress: string; stakedAmount: bigint | string }[]): bigint => {
+      let nominal = 0n;
+      const seenAttesters = new Set<string>();
+      let totalSlashes = 0n;
+      for (const s of stakes) {
+        nominal += BigInt(s.stakedAmount);
+        const normalized = normalizeAddress(s.attesterAddress);
+        if (seenAttesters.has(normalized)) continue;
+        seenAttesters.add(normalized);
+        totalSlashes += attesterState(normalized).totalSlashed;
+      }
+      return nominal > totalSlashes ? nominal - totalSlashes : 0n;
+    };
 
     // Group valid delegations by provider
     const stakesByProvider = new Map<string, typeof validDelegations>();
@@ -108,12 +157,8 @@ export async function handleProviderList(c: Context): Promise<Response> {
       }
     }
 
-    const totalDirectStakeAmount = validDirectStakes.reduce((sum, stake) => {
-      return sum + BigInt(stake.stakedAmount);
-    }, 0n)
-    const totalProviderStakeAmount = validDelegations.reduce((sum, stake) => {
-      return sum + BigInt(stake.stakedAmount);
-    }, 0n)
+    const totalDirectStakeAmount = sumEffectiveBalance(validDirectStakes);
+    const totalProviderStakeAmount = sumEffectiveBalance(validDelegations);
 
     // Calculate total staked across entire network (from valid stakes only)
     const networkTotalStaked = totalProviderStakeAmount + totalDirectStakeAmount
@@ -127,16 +172,25 @@ export async function handleProviderList(c: Context): Promise<Response> {
       const providerStakes = stakesByProvider.get(provider.providerIdentifier) || [];
 
       // Get self-stake count
-      // This is to accumulate self stakes into provider with metadata
-      const selfStakeCount = meta?.providerSelfStake?.length || 0;
-      const selfStakeAmount = BigInt(selfStakeCount) * BigInt(activationThreshold);
+      // This is to accumulate self stakes into provider with metadata.
+      // Self-stake entries are filtered to ACTIVE attesters and summed
+      // by effective balance, same as delegated stakes — keeps the
+      // numbers honest if a self-staked sequencer gets slashed or
+      // initiates an exit.
+      const declaredSelfStake = meta?.providerSelfStake ?? [];
+      const activeSelfStake = declaredSelfStake.filter(
+        addr => attesterState(normalizeAddress(addr)).status === 'ACTIVE',
+      );
+      const selfStakeCount = activeSelfStake.length;
+      const selfStakeAmount = activeSelfStake.reduce(
+        (sum, addr) => sum + attesterState(normalizeAddress(addr)).effectiveBalance,
+        0n,
+      );
 
       // Add provider self stake count to provider stakes
       const delegationsWithSelfStake = providerStakes.length + selfStakeCount;
 
-      const providerTotalStaked = providerStakes.reduce((sum, stake) => {
-        return sum + BigInt(stake.stakedAmount);
-      }, 0n) + selfStakeAmount;
+      const providerTotalStaked = sumEffectiveBalance(providerStakes) + selfStakeAmount;
 
       totalProviderSelfStakeAmount += selfStakeAmount
       totalProviderSelfStakeCount += selfStakeCount
@@ -167,15 +221,19 @@ export async function handleProviderList(c: Context): Promise<Response> {
     let notAssociatedStake = undefined;
 
     if (totalUnassociatedCount > 0) {
-      const unassociatedTotalStakedWithProvider = unassociatedStakesWithProvider.reduce((sum, stake) => {
-        return sum + BigInt(stake.stakedAmount);
-      }, 0n)
+      const unassociatedTotalStakedWithProvider = sumEffectiveBalance(unassociatedStakesWithProvider);
 
-      const unassociatedTotalStaked = unassociatedTotalStakedWithProvider + totalDirectStakeAmount - totalProviderSelfStakeAmount
+      // Subtract self-staked direct stakes (already credited to a
+      // metadata-registered provider above) so they don't double-count
+      // in the "Not Associated" bucket. Both sides of the subtraction
+      // now use effective balance, so the math stays consistent.
+      const unassociatedTotalStaked =
+        unassociatedTotalStakedWithProvider + totalDirectStakeAmount - totalProviderSelfStakeAmount;
+      const clampedUnassociatedTotal = unassociatedTotalStaked > 0n ? unassociatedTotalStaked : 0n;
 
       notAssociatedStake = {
-        delegators: totalUnassociatedCount,
-        totalStaked: unassociatedTotalStaked.toString()
+        delegators: Math.max(0, totalUnassociatedCount),
+        totalStaked: clampedUnassociatedTotal.toString()
       };
     }
 

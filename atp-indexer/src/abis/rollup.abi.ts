@@ -14,6 +14,17 @@ export const ROLLUP_FUNCTIONS = [
     type: 'function',
   },
   {
+    // Sequencers whose effective balance falls below this are classified
+    // ZOMBIE by the protocol: still registered (tokens locked) but not
+    // validating. Used by the dashboard's TVL / per-provider math to
+    // identify the threshold at which slashed stakes leave the active set.
+    inputs: [],
+    name: 'getLocalEjectionThreshold',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
     inputs: [],
     name: 'getRewardConfig',
     outputs: [
