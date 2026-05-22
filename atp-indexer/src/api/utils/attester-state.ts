@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   deposit,
   slashed,
@@ -128,6 +128,18 @@ interface BuildInputs {
   db: any;
   activationThreshold: bigint;
   ejectionThreshold: bigint;
+  /**
+   * Canonical rollup address. Used to filter `slashed` to only those
+   * events that happened on the current canonical rollup — slashes on
+   * legacy rollups (against attesters who have since migrated to
+   * canonical via `moveWithLatestRollup`) are historical: they don't
+   * affect the attester's current on-canonical balance and including
+   * them double-counts when an attester was slashed on multiple
+   * rollups during a chain of migrations. Without this filter,
+   * cumulative `SUM(amount)` per attester can blow past
+   * `activationThreshold` and silently zero out headline TVL.
+   */
+  canonicalRollupAddress: `0x${string}`;
 }
 
 /**
@@ -145,6 +157,7 @@ export async function buildAttesterStateLookup({
   db,
   activationThreshold,
   ejectionThreshold,
+  canonicalRollupAddress,
 }: BuildInputs): Promise<(attesterAddress: string) => AttesterState> {
   const [depositAggregates, latestInitiates, latestFinalizes, slashSums] = await Promise.all([
     // Both the "ever deposited" set and the per-attester latest deposit
@@ -178,6 +191,7 @@ export async function buildAttesterStateLookup({
         totalAmount: sql<bigint>`SUM(${slashed.amount})`.as("total_slashed"),
       })
       .from(slashed)
+      .where(eq(slashed.rollupAddress, canonicalRollupAddress))
       .groupBy(slashed.attesterAddress),
   ]);
 

@@ -120,6 +120,7 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
       db,
       activationThreshold: BigInt(activationThreshold),
       ejectionThreshold: BigInt(ejectionThreshold),
+      canonicalRollupAddress: normalizeAddress(rollupAddress) as `0x${string}`,
     });
 
     // Extract only the valid + ACTIVE delegations (ignore direct stakes — they were just for FIFO)
@@ -150,9 +151,10 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
     // Sum delegated stake using a per-attester slash dedupe: each row
     // contributes its own `stakedAmount` (so a multi-deposit attester
     // is sized correctly), but the slash deduction is applied once
-    // per UNIQUE attester. Without the dedupe, an attester appearing
-    // in multiple delegation rows would have their slashed amount
-    // subtracted twice — understating the headline.
+    // per UNIQUE attester. The `attesterState` lookup filters slashes
+    // to the canonical rollup, so per-attester sums are bounded by
+    // activation; the cap below is defense-in-depth.
+    const activationThresholdBig = BigInt(activationThreshold);
     let totalDelegations = 0n;
     {
       let nominal = 0n;
@@ -163,7 +165,8 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
         const normalized = normalizeAddress(s.attesterAddress);
         if (seenAttesters.has(normalized)) continue;
         seenAttesters.add(normalized);
-        totalSlashes += attesterState(normalized).totalSlashed;
+        const raw = attesterState(normalized).totalSlashed;
+        totalSlashes += raw > activationThresholdBig ? activationThresholdBig : raw;
       }
       totalDelegations = nominal > totalSlashes ? nominal - totalSlashes : 0n;
     }

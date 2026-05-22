@@ -78,6 +78,7 @@ export async function handleProviderList(c: Context): Promise<Response> {
       db,
       activationThreshold: BigInt(activationThreshold),
       ejectionThreshold: BigInt(ejectionThreshold),
+      canonicalRollupAddress: normalizeAddress(rollupAddress) as `0x${string}`,
     });
 
     // Combine ATP-based and ERC20-based delegations
@@ -128,6 +129,12 @@ export async function handleProviderList(c: Context): Promise<Response> {
     // attester globally, not per delegation row). Without the dedupe,
     // an attester with two stake rows + a slash of X would have X
     // subtracted twice → headline understates real on-chain balance.
+    //
+    // Per-attester slash is also capped at the activation threshold.
+    // The `attesterState` lookup already filters slashes to the
+    // canonical rollup only, so per-attester sums are mathematically
+    // bounded by activation. The cap here is defense-in-depth.
+    const activationThresholdBig = BigInt(activationThreshold);
     const sumEffectiveBalance = (stakes: { attesterAddress: string; stakedAmount: bigint | string }[]): bigint => {
       let nominal = 0n;
       const seenAttesters = new Set<string>();
@@ -137,7 +144,8 @@ export async function handleProviderList(c: Context): Promise<Response> {
         const normalized = normalizeAddress(s.attesterAddress);
         if (seenAttesters.has(normalized)) continue;
         seenAttesters.add(normalized);
-        totalSlashes += attesterState(normalized).totalSlashed;
+        const raw = attesterState(normalized).totalSlashed;
+        totalSlashes += raw > activationThresholdBig ? activationThresholdBig : raw;
       }
       return nominal > totalSlashes ? nominal - totalSlashes : 0n;
     };
