@@ -1,10 +1,11 @@
 import type { Context } from 'hono';
 import { db } from 'ponder:api';
-import { count, sql } from 'drizzle-orm';
+import { count, eq, sql } from 'drizzle-orm';
 import { getActivationThreshold, getLocalEjectionThreshold, calculateAPR, getActiveAttesterCount } from '../../../utils/rollup';
 import { getCanonicalRollupAddress } from '../../utils/canonical-rollup';
 import { getPublicClient } from '../../../utils/viem-client';
 import { classifyAttesterStatus } from '../../utils/attester-state';
+import { normalizeAddress } from '../../../utils/address';
 import type { StakingSummaryResponse } from '../../types/staking.types';
 import {
   stakedWithProvider,
@@ -105,6 +106,18 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
           totalAmount: sql<bigint>`SUM(${slashed.amount})`.as('total_slashed'),
         })
         .from(slashed)
+        // Canonical-rollup only. Each rollup tracks its own
+        // `effectiveBalance` (per `GSE.effectiveBalanceOf(instance, attester)`),
+        // and the protocol's `StakingLib.slash` caps emission via
+        // `Math.min(_amount, effectiveBalance)`. So per-attester
+        // per-rollup slashes are bounded by activation. But aggregating
+        // across rollups historically (e.g., attester slashed on legacy
+        // A then on canonical B after `moveWithLatestRollup` migration)
+        // sums multiple separate deductions and can exceed activation —
+        // the empirical green-deploy TVL=0 was exactly this. For
+        // canonical TVL we only care about slashes that happened on
+        // the rollup whose `effectiveBalance` we're trying to reflect.
+        .where(eq(slashed.rollupAddress, normalizeAddress(rollupAddress) as `0x${string}`))
         .groupBy(slashed.attesterAddress),
       getActiveAttesterCount(rollupAddress, client)
     ]);
@@ -221,15 +234,28 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
         zombieSlashCutoff,
       });
 
+      // Defense-in-depth cap at activation threshold. Per the v4
+      // `StakingLib.slash` source, the contract emits the
+      // *capped* `slashAmount = Math.min(_amount, effectiveBalance)`,
+      // and we've filtered the SQL to canonical-rollup-only above —
+      // so per-attester sum is mathematically bounded by activation
+      // already. The cap here is belt-and-braces against a future
+      // contract version that emits notional amounts, an indexer
+      // event-duplication bug, or any other shape we haven't
+      // anticipated.
+      const cappedSlash = r.totalAmount > activationThresholdBig
+        ? activationThresholdBig
+        : r.totalAmount;
+
       switch (status) {
         case "ACTIVE":
-          slashedActive += r.totalAmount;
+          slashedActive += cappedSlash;
           break;
         case "EXITING":
-          slashedExiting += r.totalAmount;
+          slashedExiting += cappedSlash;
           break;
         case "ZOMBIE":
-          slashedZombie += r.totalAmount;
+          slashedZombie += cappedSlash;
           break;
         // EXITED / NOT_REGISTERED: tokens are gone (or never there);
         // their slashes don't affect on-contract TVL.
