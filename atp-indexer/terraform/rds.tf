@@ -70,6 +70,42 @@ resource "aws_ssm_parameter" "db_password" {
   }
 }
 
+# Aurora Data API requires credentials in Secrets Manager (it doesn't read
+# SSM params). We keep the SSM param above untouched — the ECS task
+# definitions still read from SSM — and add a parallel Secrets Manager
+# entry sourced from the same `effective_db_password`. Both stay in sync
+# because Terraform writes both from the same local.
+#
+# Usage from any AWS-authed CLI:
+#
+#   aws rds-data execute-statement \
+#     --region eu-west-2 \
+#     --resource-arn $(terraform output -raw aurora_cluster_arn) \
+#     --secret-arn   $(terraform output -raw db_credentials_secret_arn) \
+#     --database     postgres \
+#     --sql          "SELECT COUNT(*) FROM \"atp-indexer-prod-v24\".slashed"
+#
+# Auth: caller's IAM principal needs `rds-data:ExecuteStatement` on the
+# cluster and `secretsmanager:GetSecretValue` on the secret. Operators
+# with admin already have both. Read-only IAM role is a future follow-up.
+resource "aws_secretsmanager_secret" "db_credentials" {
+  name        = "${local.full_name}-db-credentials"
+  description = "ATP indexer DB credentials for Aurora Data API access (ops-only)"
+
+  tags = merge(local.common_tags, {
+    Name = "${local.full_name}-db-credentials"
+    Type = "secrets"
+  })
+}
+
+resource "aws_secretsmanager_secret_version" "db_credentials" {
+  secret_id = aws_secretsmanager_secret.db_credentials.id
+  secret_string = jsonencode({
+    username = var.db_username
+    password = local.effective_db_password
+  })
+}
+
 # Aurora PostgreSQL Cluster
 # Storage: Automatically replicates 6 ways across 3 AZs
 # Instances: Explicitly distributed across AZs for HA (see instances below)
@@ -102,6 +138,14 @@ resource "aws_rds_cluster" "atp_indexer" {
 
   # Apply changes immediately in non-prod, during maintenance window in prod
   apply_immediately = var.env != "prod"
+
+  # Aurora Data API: HTTPS-based SQL execution against the cluster.
+  # Lets operators run ad-hoc queries from any AWS-authed machine without
+  # bastion/VPN/port-forward (the cluster itself stays in private
+  # subnets). Auth is IAM, credentials come from the Secrets Manager
+  # secret declared below (Data API doesn't read SSM). Supported on
+  # Aurora PostgreSQL 16.x provisioned clusters (we're on 16.11).
+  enable_http_endpoint = true
 
   tags = merge(local.common_tags, {
     Name = "${local.full_name}-aurora-cluster"

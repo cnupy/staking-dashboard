@@ -195,21 +195,32 @@ export async function buildAttesterStateLookup({
       .groupBy(slashed.attesterAddress),
   ]);
 
+  // postgres-js returns SQL `numeric` (the type of `SUM(bigint)`) as
+  // STRING by default — `sql<bigint>` is purely a TypeScript hint. JS's
+  // `bigint + string` does string concatenation, and downstream
+  // comparisons like `nominalTotal > slashedRegistered` coerce both to
+  // Number, turning a multi-thousand-digit concatenated string into
+  // `Infinity` and silently zeroing the headline TVL. Always coerce
+  // SUM results to bigint at the boundary.
+  //
+  // `MAX(bigint)` typically comes back as bigint (postgres-js parses
+  // int8 to bigint when configured), but coerce defensively too —
+  // cheap, and protects against parser config drift.
   const depositMap = new Map<string, bigint>();
   for (const r of depositAggregates) {
-    depositMap.set(r.attesterAddress, r.maxTimestamp);
+    depositMap.set(r.attesterAddress, BigInt(r.maxTimestamp));
   }
   const initiateMap = new Map<string, bigint>();
   for (const r of latestInitiates) {
-    initiateMap.set(r.attesterAddress, r.maxTimestamp);
+    initiateMap.set(r.attesterAddress, BigInt(r.maxTimestamp));
   }
   const finalizeMap = new Map<string, bigint>();
   for (const r of latestFinalizes) {
-    finalizeMap.set(r.attesterAddress, r.maxTimestamp);
+    finalizeMap.set(r.attesterAddress, BigInt(r.maxTimestamp));
   }
   const slashMap = new Map<string, bigint>();
   for (const r of slashSums) {
-    slashMap.set(r.attesterAddress, r.totalAmount);
+    slashMap.set(r.attesterAddress, BigInt(r.totalAmount));
   }
 
   const zombieSlashCutoff = activationThreshold > ejectionThreshold

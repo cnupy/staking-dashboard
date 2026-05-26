@@ -83,6 +83,16 @@ output "db_security_group_id" {
   value       = aws_security_group.atp_db.id
 }
 
+output "aurora_cluster_arn" {
+  description = "Aurora cluster ARN (used as --resource-arn for Aurora Data API)"
+  value       = aws_rds_cluster.atp_indexer.arn
+}
+
+output "db_credentials_secret_arn" {
+  description = "Secrets Manager ARN for Aurora Data API auth (used as --secret-arn)"
+  value       = aws_secretsmanager_secret.db_credentials.arn
+}
+
 output "indexer_service_name" {
   description = "ATP indexer ECS service name"
   value       = aws_ecs_service.atp_indexer.name
