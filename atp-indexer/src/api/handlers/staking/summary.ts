@@ -169,23 +169,29 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
 
     // Per-attester latest-event maps. Used both to compute the EXITING
     // bucket and to apportion slashed amounts across status buckets.
+    //
+    // Coerce timestamps to bigint at the boundary — `MAX(bigint)`
+    // usually comes back as bigint via postgres-js's int8 parser, but
+    // be defensive (parser config drift would silently degrade
+    // comparisons below to lossy Number ops).
     const latestDepositByAttester = new Map<string, bigint>();
     for (const r of latestDepositsByAttester) {
-      latestDepositByAttester.set(r.attesterAddress, r.maxTimestamp);
+      latestDepositByAttester.set(r.attesterAddress, BigInt(r.maxTimestamp));
     }
     const latestInitiateByAttester = new Map<string, bigint>();
     for (const r of latestInitiatesByAttester) {
-      latestInitiateByAttester.set(r.attesterAddress, r.maxTimestamp);
+      latestInitiateByAttester.set(r.attesterAddress, BigInt(r.maxTimestamp));
     }
     const latestFinalizeByAttester = new Map<string, bigint>();
     for (const r of latestFinalizesByAttester) {
-      latestFinalizeByAttester.set(r.attesterAddress, r.maxTimestamp);
+      latestFinalizeByAttester.set(r.attesterAddress, BigInt(r.maxTimestamp));
     }
 
     let exitingCount = 0;
     for (const r of latestInitiatesByAttester) {
       const finalizeTs = latestFinalizeByAttester.get(r.attesterAddress);
-      if (finalizeTs === undefined || r.maxTimestamp > finalizeTs) {
+      const initiateTs = BigInt(r.maxTimestamp);
+      if (finalizeTs === undefined || initiateTs > finalizeTs) {
         exitingCount++;
       }
     }
@@ -219,6 +225,16 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
     let slashedZombie = 0n;
 
     for (const r of slashSumsByAttester) {
+      // `r.totalAmount` is typed `bigint` via `sql<bigint>`, but at
+      // runtime postgres-js returns SQL `numeric` (the result type of
+      // `SUM(bigint)` in Postgres) as a STRING. JS's `+` operator with
+      // `bigint + string` does string-concatenation, not numeric add,
+      // and the resulting comparison `nominalTotal > slashedRegistered`
+      // coerces both to Number — turning the huge concatenated string
+      // into `Infinity` and silently zeroing the headline TVL. Coerce
+      // to bigint explicitly here, at the boundary.
+      const totalSlashedBig = BigInt(r.totalAmount);
+
       // An attester with a Slashed event MUST have a prior Deposit
       // (the protocol can't slash a non-existent attester) — so
       // `hasDeposit: true` is safe. `latestDeposit` may still be
@@ -230,7 +246,7 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
         latestDeposit: latestDepositByAttester.get(r.attesterAddress),
         latestInitiate: latestInitiateByAttester.get(r.attesterAddress),
         latestFinalize: latestFinalizeByAttester.get(r.attesterAddress),
-        totalSlashed: r.totalAmount,
+        totalSlashed: totalSlashedBig,
         zombieSlashCutoff,
       });
 
@@ -243,9 +259,9 @@ export async function handleStakingSummary(c: Context): Promise<Response> {
       // contract version that emits notional amounts, an indexer
       // event-duplication bug, or any other shape we haven't
       // anticipated.
-      const cappedSlash = r.totalAmount > activationThresholdBig
+      const cappedSlash = totalSlashedBig > activationThresholdBig
         ? activationThresholdBig
-        : r.totalAmount;
+        : totalSlashedBig;
 
       switch (status) {
         case "ACTIVE":
