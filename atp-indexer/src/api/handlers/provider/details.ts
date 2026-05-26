@@ -1,10 +1,10 @@
 import type { Context } from 'hono';
 import { db } from 'ponder:api';
-import { eq, desc, count, or, and } from 'drizzle-orm';
+import { eq, desc, or, and } from 'drizzle-orm';
 import { checksumAddress, normalizeAddress } from '../../../utils/address';
 import { getProviderMetadata } from '../../../utils/provider-metadata';
 import type { ProviderDetailsResponse } from '../../types/provider.types';
-import { fetchFailedDeposits, filterValidStakes } from '../../../utils/failed-deposits';
+import { fetchFailedDeposits, filterValidStakes, markStakesWithFailedDeposits } from '../../../utils/failed-deposits';
 import { getActivationThreshold, getLocalEjectionThreshold } from '../../../utils/rollup';
 import { getCanonicalRollupAddress } from '../../utils/canonical-rollup';
 import { getPublicClient } from '../../../utils/viem-client';
@@ -15,7 +15,6 @@ import {
   erc20StakedWithProvider,
   providerTakeRateUpdate,
   staked,
-  failedDeposit,
   atpPosition
 } from 'ponder:schema';
 
@@ -29,14 +28,51 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
     const client = getPublicClient();
 
     const rollupAddress = await getCanonicalRollupAddress(client);
-    const [activationThreshold, ejectionThreshold, providerData, allAtpDelegationsCount, allErc20DelegationsCount, allDirectStakesCount, allFailedDepositCount] = await Promise.all([
+    // Fetch the all-network stake data alongside the provider-specific
+    // queries. We need this to compute `networkTotalStaked` the same
+    // way `/api/providers` (list) does — sum of effective ACTIVE stake,
+    // slash-adjusted — so that the "% of network stake" displayed on
+    // the detail page matches the list. Previously this used a
+    // count × activationThreshold shortcut that didn't account for
+    // finalized exits, slashes, or active-only filtering, producing a
+    // larger denominator and a smaller percentage.
+    const [
+      activationThreshold,
+      ejectionThreshold,
+      providerData,
+      allAtpDelegationsRows,
+      allErc20DelegationsRows,
+      allDirectStakesRows,
+    ] = await Promise.all([
       getActivationThreshold(rollupAddress, client),
       getLocalEjectionThreshold(rollupAddress, client),
       db.select().from(provider).where(eq(provider.providerIdentifier, id)).limit(1),
-      db.select({ count: count() }).from(stakedWithProvider),
-      db.select({ count: count() }).from(erc20StakedWithProvider),
-      db.select({ count: count() }).from(staked),
-      db.select({ count: count() }).from(failedDeposit)
+      db.select({
+        providerIdentifier: stakedWithProvider.providerIdentifier,
+        attesterAddress: stakedWithProvider.attesterAddress,
+        stakerAddress: stakedWithProvider.stakerAddress,
+        stakedAmount: stakedWithProvider.stakedAmount,
+        timestamp: stakedWithProvider.timestamp,
+        blockNumber: stakedWithProvider.blockNumber,
+        logIndex: stakedWithProvider.logIndex,
+      }).from(stakedWithProvider),
+      db.select({
+        providerIdentifier: erc20StakedWithProvider.providerIdentifier,
+        attesterAddress: erc20StakedWithProvider.attesterAddress,
+        stakerAddress: erc20StakedWithProvider.stakerAddress,
+        stakedAmount: erc20StakedWithProvider.stakedAmount,
+        timestamp: erc20StakedWithProvider.timestamp,
+        blockNumber: erc20StakedWithProvider.blockNumber,
+        logIndex: erc20StakedWithProvider.logIndex,
+      }).from(erc20StakedWithProvider),
+      db.select({
+        attesterAddress: staked.attesterAddress,
+        stakerAddress: staked.stakerAddress,
+        timestamp: staked.timestamp,
+        blockNumber: staked.blockNumber,
+        logIndex: staked.logIndex,
+        stakedAmount: staked.stakedAmount,
+      }).from(staked),
     ]);
 
     if (!providerData || providerData.length === 0) {
@@ -112,28 +148,111 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
     ];
     const validAllStakes = filterValidStakes(allStakes, failedDepositMap);
 
-    // Build per-attester status + effective-balance lookup. Used to
-    // filter the provider's headline numbers to ACTIVE sequencers only
-    // (exiting / zombie sequencers don't validate) and to sum by
-    // effective balance instead of deposit-time amount.
+    // Build per-attester status + effective-balance lookup. Used both
+    // for the provider's status buckets and for computing the
+    // network-wide active stake (denominator of the % calculation).
     const attesterState = await buildAttesterStateLookup({
       db,
       activationThreshold: BigInt(activationThreshold),
       ejectionThreshold: BigInt(ejectionThreshold),
       canonicalRollupAddress: normalizeAddress(rollupAddress) as `0x${string}`,
     });
+    const activationThresholdBig = BigInt(activationThreshold);
 
-    // Extract only the valid + ACTIVE delegations (ignore direct stakes — they were just for FIFO)
-    const validDelegations = validAllStakes
-      .filter(s => s._type === 'delegation')
+    // Compute the network-wide active stake the same way
+    // `/api/providers` (list) does: classify and filter every stake
+    // network-wide, then sum effective balance (with per-attester
+    // slash dedupe). Mirrors `provider/list.ts` so the "% of network
+    // stake" displayed here matches the list view.
+    //
+    // TODO: extract this and `provider/list.ts`'s identical pipeline
+    // into a shared util to prevent future drift.
+    const networkAllDelegations = [...allAtpDelegationsRows, ...allErc20DelegationsRows];
+    const networkAttesterWithdrawerPairs = [
+      ...networkAllDelegations.map(s => ({
+        attesterAddress: normalizeAddress(s.attesterAddress),
+        withdrawerAddress: normalizeAddress(s.stakerAddress),
+      })),
+      ...allDirectStakesRows.map(s => ({
+        attesterAddress: normalizeAddress(s.attesterAddress),
+        withdrawerAddress: normalizeAddress(s.stakerAddress),
+      })),
+    ].filter(pair => pair.attesterAddress !== '');
+
+    const networkFailedDepositMap = await fetchFailedDeposits(networkAttesterWithdrawerPairs, db);
+    const networkAllStakes = [
+      ...networkAllDelegations.map(s => ({ ...s, _type: 'delegation' as const })),
+      ...allDirectStakesRows.map(s => ({ ...s, _type: 'direct' as const })),
+    ];
+    const networkMarked = markStakesWithFailedDeposits(networkAllStakes, networkFailedDepositMap);
+    const networkActiveStakes = networkMarked
+      .filter(s => !s.hasFailedDeposit && s.status !== 'UNSTAKED')
       .filter(s => attesterState(normalizeAddress(s.attesterAddress)).status === 'ACTIVE');
 
-    // Calculate network total staked
-    // All attempted stakes + all delegations (ATP + ERC20) - all failed deposits
-    const totalDelegationsCount = allAtpDelegationsCount[0].count + allErc20DelegationsCount[0].count;
-    const networkTotalStaked = BigInt(allDirectStakesCount[0].count + totalDelegationsCount - allFailedDepositCount[0].count) * BigInt(activationThreshold)
+    // Sum effective balance with per-attester slash dedupe (same shape
+    // as `sumEffectiveBalance` in `provider/list.ts`).
+    let networkTotalStakedBig = 0n;
+    {
+      let nominal = 0n;
+      const seen = new Set<string>();
+      let totalSlashes = 0n;
+      for (const s of networkActiveStakes) {
+        nominal += BigInt(s.stakedAmount);
+        const normalized = normalizeAddress(s.attesterAddress);
+        if (seen.has(normalized)) continue;
+        seen.add(normalized);
+        const raw = attesterState(normalized).totalSlashed;
+        totalSlashes += raw > activationThresholdBig ? activationThresholdBig : raw;
+      }
+      networkTotalStakedBig = nominal > totalSlashes ? nominal - totalSlashes : 0n;
+    }
+    const networkTotalStaked = networkTotalStakedBig;
 
     const metadata = getProviderMetadata(providerRecord.providerIdentifier);
+
+    // Bucket THIS provider's delegations by attester status. The
+    // ACTIVE bucket drives the headline `delegators` / `totalStaked`
+    // (same as before); EXITING and ZOMBIE are new and surface
+    // separately on the provider detail page so operators / delegators
+    // can see in-flight exits and slashed-out sequencers without those
+    // affecting the headline "productive stake" number.
+    //
+    // Each bucket's amount uses the same per-attester slash-dedupe
+    // pattern as the headline — sum row-level `stakedAmount`, subtract
+    // capped slash once per unique attester.
+    const providerValidDelegations = validAllStakes.filter(s => s._type === 'delegation');
+
+    function sumBucket(rows: typeof providerValidDelegations): { count: number; amount: bigint } {
+      let nominal = 0n;
+      const seen = new Set<string>();
+      let totalSlashes = 0n;
+      for (const s of rows) {
+        nominal += BigInt(s.stakedAmount);
+        const normalized = normalizeAddress(s.attesterAddress);
+        if (seen.has(normalized)) continue;
+        seen.add(normalized);
+        const raw = attesterState(normalized).totalSlashed;
+        totalSlashes += raw > activationThresholdBig ? activationThresholdBig : raw;
+      }
+      return {
+        count: rows.length,
+        amount: nominal > totalSlashes ? nominal - totalSlashes : 0n,
+      };
+    }
+
+    const activeRows = providerValidDelegations.filter(
+      s => attesterState(normalizeAddress(s.attesterAddress)).status === 'ACTIVE',
+    );
+    const exitingRows = providerValidDelegations.filter(
+      s => attesterState(normalizeAddress(s.attesterAddress)).status === 'EXITING',
+    );
+    const zombieRows = providerValidDelegations.filter(
+      s => attesterState(normalizeAddress(s.attesterAddress)).status === 'ZOMBIE',
+    );
+
+    const activeBucket = sumBucket(activeRows);
+    const exitingBucket = sumBucket(exitingRows);
+    const zombieBucket = sumBucket(zombieRows);
 
     // Self-stake roster: filter to ACTIVE attesters only and sum by
     // effective balance. Self-stake addresses are inherently unique
@@ -148,29 +267,14 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
       0n,
     );
 
-    // Sum delegated stake using a per-attester slash dedupe: each row
-    // contributes its own `stakedAmount` (so a multi-deposit attester
-    // is sized correctly), but the slash deduction is applied once
-    // per UNIQUE attester. The `attesterState` lookup filters slashes
-    // to the canonical rollup, so per-attester sums are bounded by
-    // activation; the cap below is defense-in-depth.
-    const activationThresholdBig = BigInt(activationThreshold);
-    let totalDelegations = 0n;
-    {
-      let nominal = 0n;
-      const seenAttesters = new Set<string>();
-      let totalSlashes = 0n;
-      for (const s of validDelegations) {
-        nominal += BigInt(s.stakedAmount);
-        const normalized = normalizeAddress(s.attesterAddress);
-        if (seenAttesters.has(normalized)) continue;
-        seenAttesters.add(normalized);
-        const raw = attesterState(normalized).totalSlashed;
-        totalSlashes += raw > activationThresholdBig ? activationThresholdBig : raw;
-      }
-      totalDelegations = nominal > totalSlashes ? nominal - totalSlashes : 0n;
-    }
-    const totalStaked = totalDelegations + totalProviderSelfStakes
+    // Keep historical variable name for the response — represents
+    // provider's productive (ACTIVE) stake.
+    const totalDelegations = activeBucket.amount;
+    const totalStaked = totalDelegations + totalProviderSelfStakes;
+    // For consistency with how the list endpoint structures
+    // `validDelegations`, the post-filter ACTIVE set is what feeds
+    // into the headline count.
+    const validDelegations = activeRows;
 
     const response: ProviderDetailsResponse = {
       id: providerRecord.providerIdentifier,
@@ -185,6 +289,19 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
       totalStaked: totalStaked.toString(),
       networkTotalStaked: networkTotalStaked.toString(),
       delegators: validDelegations.length + providerSelfStakeCount,
+      // Per-status buckets. Only emitted when non-zero to keep the
+      // response payload tight for healthy providers; the dashboard
+      // hides the subline when both are zero. Self-stake addresses are
+      // NOT counted in these buckets (those are part of the active
+      // headline via `totalStaked` + `delegators`).
+      ...(exitingBucket.count > 0 && {
+        exitingDelegators: exitingBucket.count,
+        exitingStaked: exitingBucket.amount.toString(),
+      }),
+      ...(zombieBucket.count > 0 && {
+        zombieDelegators: zombieBucket.count,
+        zombieStaked: zombieBucket.amount.toString(),
+      }),
       createdAtBlock: providerRecord.blockNumber.toString(),
       createdAtTx: providerRecord.txHash,
       createdAtTime: Number(providerRecord.timestamp),

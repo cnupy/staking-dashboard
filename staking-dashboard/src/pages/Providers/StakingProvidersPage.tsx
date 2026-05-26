@@ -80,7 +80,7 @@ export default function StakingProvidersPage() {
             </p>
           </div>
           <a
-            href="https://docs.aztec.network/the_aztec_network/operation/sequencer_management/running_delegated_stake"
+            href="https://docs.aztec.network/operate/operators/setup/become_a_staking_provider"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-aqua hover:underline font-medium"

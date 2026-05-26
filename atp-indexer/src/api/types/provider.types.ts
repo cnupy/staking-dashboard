@@ -68,6 +68,23 @@ export interface ProviderDetailsResponse {
   totalStaked: string;
   networkTotalStaked: string;
   delegators: number;
+  /**
+   * Number of attesters delegating to this provider whose latest event
+   * is `withdrawInitiated` (mid-exit). Omitted when zero. Separate from
+   * `delegators` (which is ACTIVE-only) so the headline number reflects
+   * productive stake.
+   */
+  exitingDelegators?: number;
+  /** Effective-balance sum (post-slash) of the exiting bucket. */
+  exitingStaked?: string;
+  /**
+   * Number of attesters delegating to this provider classified as
+   * zombie (slashed below ejection threshold; still registered but not
+   * validating). Omitted when zero.
+   */
+  zombieDelegators?: number;
+  /** Effective-balance sum (post-slash) of the zombie bucket. */
+  zombieStaked?: string;
   createdAtBlock: string;
   createdAtTx: string;
   createdAtTime: number;
