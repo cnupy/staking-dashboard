@@ -70,24 +70,18 @@ resource "aws_ssm_parameter" "db_password" {
   }
 }
 
-# Aurora Data API requires credentials in Secrets Manager (it doesn't read
-# SSM params). We keep the SSM param above untouched — the ECS task
-# definitions still read from SSM — and add a parallel Secrets Manager
-# entry sourced from the same `effective_db_password`. Both stay in sync
-# because Terraform writes both from the same local.
+# Secrets Manager mirror of the DB password. Used by Aurora Data API
+# when (if) it's enabled on the cluster — Data API doesn't read SSM, it
+# requires Secrets Manager. We keep the SSM param above untouched (the
+# ECS task definitions still read from SSM) and write a parallel entry
+# here from the same `effective_db_password`. Both stay in sync because
+# Terraform writes both from the same local.
 #
-# Usage from any AWS-authed CLI:
-#
-#   aws rds-data execute-statement \
-#     --region eu-west-2 \
-#     --resource-arn $(terraform output -raw aurora_cluster_arn) \
-#     --secret-arn   $(terraform output -raw db_credentials_secret_arn) \
-#     --database     postgres \
-#     --sql          "SELECT COUNT(*) FROM \"atp-indexer-prod-v24\".slashed"
-#
-# Auth: caller's IAM principal needs `rds-data:ExecuteStatement` on the
-# cluster and `secretsmanager:GetSecretValue` on the secret. Operators
-# with admin already have both. Read-only IAM role is a future follow-up.
+# Currently the cluster's instance class (db.t4g.medium) doesn't
+# support Data API — see the commented-out `enable_http_endpoint` above
+# — so this secret is inert today. Kept around so it's a one-line
+# Terraform change to enable Data API the moment the instance class
+# crosses the supported tier.
 resource "aws_secretsmanager_secret" "db_credentials" {
   name        = "${local.full_name}-db-credentials"
   description = "ATP indexer DB credentials for Aurora Data API access (ops-only)"
@@ -139,13 +133,18 @@ resource "aws_rds_cluster" "atp_indexer" {
   # Apply changes immediately in non-prod, during maintenance window in prod
   apply_immediately = var.env != "prod"
 
-  # Aurora Data API: HTTPS-based SQL execution against the cluster.
-  # Lets operators run ad-hoc queries from any AWS-authed machine without
-  # bastion/VPN/port-forward (the cluster itself stays in private
-  # subnets). Auth is IAM, credentials come from the Secrets Manager
-  # secret declared below (Data API doesn't read SSM). Supported on
-  # Aurora PostgreSQL 16.x provisioned clusters (we're on 16.11).
-  enable_http_endpoint = true
+  # Aurora Data API would be ideal for ops queries (HTTPS endpoint, no
+  # VPC ingress, IAM-authenticated) — but it requires an instance class
+  # of db.r6i.large / db.r6g.large or larger. We're on db.t4g.medium to
+  # keep cost down, so enabling triggers
+  # `InvalidParameterCombination: The instance class that you specified
+  # doesn't support the HTTP endpoint for using RDS Data API`. The
+  # Secrets Manager secret below stays in place so the moment the
+  # instance class crosses that bar, flipping this back on is a one-line
+  # change. For now, ops debug goes through a one-off SSM-managed
+  # bastion EC2 in the private subnet.
+  #
+  # enable_http_endpoint = true
 
   tags = merge(local.common_tags, {
     Name = "${local.full_name}-aurora-cluster"
