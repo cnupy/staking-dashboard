@@ -16,6 +16,13 @@ interface Provider {
   delegators: string;
   address: string;
   id: string;
+  // Optional per-status buckets. Indexer omits these when zero so the
+  // healthy-provider response stays small; UI shows nothing in that
+  // case. Surfaced only on the provider detail page (not the list).
+  exitingDelegators?: number;
+  exitingStaked?: string;
+  zombieDelegators?: number;
+  zombieStaked?: string;
 }
 
 interface ProviderOverviewProps {
@@ -32,6 +39,36 @@ export const ProviderOverview = ({ provider }: ProviderOverviewProps) => {
   const currentStake = decimals
     ? formatTokenAmount(stringToBigInt(provider.totalStaked), decimals, symbol)
     : '---';
+
+  // Build the inactive-stake subline for the "Current Stake" tile.
+  // Only the non-zero buckets render, and the whole subline is hidden
+  // when both are zero — keeps healthy providers' tiles clean.
+  const inactiveStakeParts: string[] = [];
+  if (provider.exitingStaked && decimals) {
+    inactiveStakeParts.push(
+      `+${formatTokenAmount(stringToBigInt(provider.exitingStaked), decimals, symbol)} exiting`,
+    );
+  }
+  if (provider.zombieStaked && decimals) {
+    inactiveStakeParts.push(
+      `+${formatTokenAmount(stringToBigInt(provider.zombieStaked), decimals, symbol)} zombie`,
+    );
+  }
+  const inactiveStakeSubline =
+    inactiveStakeParts.length > 0 ? inactiveStakeParts.join(' · ') : undefined;
+
+  // Same pattern for the "Delegators" tile — count-only, no token
+  // amount.
+  const inactiveDelegatorParts: string[] = [];
+  if (provider.exitingDelegators && provider.exitingDelegators > 0) {
+    inactiveDelegatorParts.push(`+${provider.exitingDelegators} exiting`);
+  }
+  if (provider.zombieDelegators && provider.zombieDelegators > 0) {
+    inactiveDelegatorParts.push(`+${provider.zombieDelegators} zombie`);
+  }
+  const inactiveDelegatorSubline =
+    inactiveDelegatorParts.length > 0 ? inactiveDelegatorParts.join(' · ') : undefined;
+
   return (
     <div className="bg-parchment/5 border border-parchment/20 p-4 sm:p-6 overflow-x-auto">
       {/* Provider Header */}
@@ -83,6 +120,9 @@ export const ProviderOverview = ({ provider }: ProviderOverviewProps) => {
             </div>
           )}
           <div className="text-xs text-parchment/60">{provider.percentage}</div>
+          {inactiveStakeSubline && (
+            <div className="text-xs text-parchment/40 mt-1">{inactiveStakeSubline}</div>
+          )}
         </div>
 
         <div className="bg-parchment/5 border border-parchment/20 p-3 sm:p-4">
@@ -131,6 +171,9 @@ export const ProviderOverview = ({ provider }: ProviderOverviewProps) => {
           <div className="font-mono text-parchment font-bold text-lg">
             {provider.delegators}
           </div>
+          {inactiveDelegatorSubline && (
+            <div className="text-xs text-parchment/40 mt-1">{inactiveDelegatorSubline}</div>
+          )}
         </div>
 
       </div>

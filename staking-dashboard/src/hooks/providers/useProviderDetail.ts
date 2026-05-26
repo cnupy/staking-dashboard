@@ -44,6 +44,12 @@ interface ProviderDetailResponse {
   totalStaked: string
   networkTotalStaked: string
   delegators: number
+  // Per-status buckets are optional in the response — only present when
+  // non-zero. Keeps healthy providers' payload tight.
+  exitingDelegators?: number
+  exitingStaked?: string
+  zombieDelegators?: number
+  zombieStaked?: string
   attesterCount: number
   createdAtBlock: string
   createdAtTx: string
@@ -67,6 +73,15 @@ export interface ProviderDetail {
   percentage: string
   commission: string
   delegators: string
+  /**
+   * Raw API fields exposed for the UI subline rendering. Bigint
+   * amounts kept as strings (consumer applies `BigInt()` +
+   * `formatTokenAmount` at render-time).
+   */
+  exitingDelegators?: number
+  exitingStaked?: string
+  zombieDelegators?: number
+  zombieStaked?: string
   website?: string
   email?: string
   address: string
@@ -111,6 +126,10 @@ function transformProviderData(data: ProviderDetailResponse): ProviderDetail {
     address: data.address,
     description: data.description,
     attesterCount: data.attesterCount,
+    exitingDelegators: data.exitingDelegators,
+    exitingStaked: data.exitingStaked,
+    zombieDelegators: data.zombieDelegators,
+    zombieStaked: data.zombieStaked,
     createdAtBlock: data.createdAtBlock,
     createdAtTx: data.createdAtTx,
     createdAtTime: data.createdAtTime,
