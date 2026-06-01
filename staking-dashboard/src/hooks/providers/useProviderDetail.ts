@@ -21,6 +21,18 @@ interface ProviderStake {
   rollupAddress: string
   attesterAddress: string
   stakedAmount: string
+  /**
+   * Take rate (bips) baked into THIS split's splitData at deploy time —
+   * NOT the provider's current rate. Operators who changed their
+   * commission have older splits still expecting the older rate, and
+   * a distribute call with the wrong rate reverts on hash mismatch.
+   */
+  providerTakeRate: number
+  /**
+   * Operator-side recipient baked into THIS split's splitData at deploy
+   * time. Same drift concern as `providerTakeRate`.
+   */
+  providerRewardsRecipient: string
   blockNumber: string
   txHash: string
   timestamp: string

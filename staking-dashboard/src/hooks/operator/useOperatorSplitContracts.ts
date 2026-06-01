@@ -45,6 +45,20 @@ interface ProviderStakeRow {
   /** Legacy nested shape; kept as a fallback while older indexer builds are
    *  still in rotation. Will go away once every env is past the join fix. */
   atp?: { beneficiary?: string } | null
+  /**
+   * Per-stake snapshot of the provider config at the moment this stake
+   * was indexed — the values baked into the split's splitData hash at
+   * deploy time. Optional because older indexer builds didn't surface
+   * these; callers MUST fall back to the provider-level current values
+   * only as a transitional safety net (they break distributes against
+   * splits deployed under stale rates).
+   */
+  providerTakeRate?: number
+  providerRewardsRecipient?: string
+  /** Used to pick the EARLIEST stake's snapshot when multiple stake rows
+   *  point at the same split — the earliest stake's values are what the
+   *  split was actually deployed with. */
+  blockNumber?: string
 }
 
 interface ProviderDetailResponse {
@@ -105,7 +119,16 @@ export function useOperatorSplitContracts(identities: OperatorIdentity[]) {
 
   const splitContracts = useMemo<OperatorSplitContract[]>(() => {
     const out: OperatorSplitContract[] = []
-    const seen = new Set<string>()
+    // Per-split dedupe: keep the EARLIEST stake's snapshot. The
+    // split's splitData hash was deployed using whatever take rate /
+    // rewards recipient the provider had at that first stake; later
+    // stakes routing through the same split address agree on those
+    // values (a different rate produces a different deterministic
+    // split address), but indexer drift / transitional rows could
+    // disagree, so we anchor on the earliest-block row. The `index`
+    // is the position in `out`, used to mutate in-place when a later
+    // iteration finds an earlier stake.
+    const seen = new Map<string, { index: number; blockNumber: bigint }>()
     for (let i = 0; i < identities.length; i++) {
       const identity = identities[i]
       const data = queries[i]?.data
@@ -140,10 +163,6 @@ export function useOperatorSplitContracts(identities: OperatorIdentity[]) {
             beneficiary = stake.stakerAddress as Address
           }
 
-          const key = `${identity.providerId}:${splitAddress.toLowerCase()}`
-          if (seen.has(key)) continue
-          seen.add(key)
-
           // Skip degenerate self-splits (operator == delegator).
           if (beneficiary && isAddressEqual(splitAddress, beneficiary)) continue
 
@@ -156,15 +175,43 @@ export function useOperatorSplitContracts(identities: OperatorIdentity[]) {
                 ? "erc20-delegation"
                 : source
 
-          out.push({
+          // Per-stake values take precedence; identity fields are the
+          // transitional fallback for indexer builds that don't yet
+          // surface them. The identity path is the BUG we're fixing —
+          // it returns the provider's current rate even when this
+          // split was deployed under an older rate — but keeping the
+          // fallback avoids breaking rollout if the indexer lags.
+          const providerTakeRate =
+            stake.providerTakeRate ?? identity.providerTakeRate
+          const providerRewardsRecipient =
+            (stake.providerRewardsRecipient as Address | undefined) ??
+            identity.providerRewardsRecipient
+
+          const entry: OperatorSplitContract = {
             splitContract: splitAddress,
             providerId: identity.providerId,
-            providerRewardsRecipient: identity.providerRewardsRecipient,
-            providerTakeRate: identity.providerTakeRate,
+            providerRewardsRecipient,
+            providerTakeRate,
             delegatorBeneficiary: beneficiary,
             providerLabel: label,
             source: inferredSource,
-          })
+          }
+
+          const key = `${identity.providerId}:${splitAddress.toLowerCase()}`
+          // Block number guards default to MAX so a missing
+          // blockNumber on the current row only overwrites another
+          // missing-blockNumber row, never a real one.
+          const block = stake.blockNumber !== undefined
+            ? BigInt(stake.blockNumber)
+            : BigInt(Number.MAX_SAFE_INTEGER)
+          const prior = seen.get(key)
+          if (prior === undefined) {
+            seen.set(key, { index: out.length, blockNumber: block })
+            out.push(entry)
+          } else if (block < prior.blockNumber) {
+            out[prior.index] = entry
+            seen.set(key, { index: prior.index, blockNumber: block })
+          }
         }
       }
     }

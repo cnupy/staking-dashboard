@@ -319,6 +319,11 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
         rollupAddress: checksumAddress(stake.rollupAddress),
         attesterAddress: checksumAddress(stake.attesterAddress),
         stakedAmount: stake.stakedAmount.toString(),
+        // Per-stake snapshot of the provider config at the moment this
+        // stake was indexed — i.e., the values baked into the split's
+        // splitData hash at deploy time. See type doc on ProviderStake.
+        providerTakeRate: stake.providerTakeRate,
+        providerRewardsRecipient: checksumAddress(stake.providerRewardsRecipient),
         blockNumber: stake.blockNumber.toString(),
         txHash: stake.txHash,
         timestamp: Number(stake.timestamp),
