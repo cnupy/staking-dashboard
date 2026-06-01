@@ -41,6 +41,26 @@ export interface ProviderStake {
   rollupAddress: string;
   attesterAddress: string;
   stakedAmount: string;
+  /**
+   * Provider take rate (bips) recorded at the moment this stake was
+   * indexed — i.e., the rate baked into the split contract's splitData
+   * hash at deploy time. Distinct from the provider's *current* take
+   * rate (returned at the top-level `commission` field): if the operator
+   * has changed their take rate over time, older splits keep their
+   * original rate and a `Split.distribute(splitData_currentRate)` call
+   * reverts on hash mismatch. Callers building distribute txs MUST use
+   * this per-stake value, not the provider-level current value.
+   */
+  providerTakeRate: number;
+  /**
+   * Operator-side recipient baked into the split's splitData at deploy
+   * time. Same drift caveat as `providerTakeRate` — if the operator
+   * changed their rewards recipient, older splits still expect the old
+   * address in the recipients tuple. Use this for any distribute
+   * call against this particular split, not the provider's current
+   * `rewardsRecipient`.
+   */
+  providerRewardsRecipient: string;
   blockNumber: string;
   txHash: string;
   timestamp: number;

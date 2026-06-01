@@ -69,6 +69,17 @@ export interface DelegationClaimInputs {
  */
 const RECOVERY_DUST_THRESHOLD_NUMERATOR = 5n
 
+/**
+ * Returns the dust threshold for a token of the given decimals — half of
+ * one whole token, scaled. Exposed so callers that pre-filter delegations
+ * (e.g., bulk-claim buttons surfacing a count) can use the same gate as
+ * `buildDelegationClaimEntries` does internally, keeping the "Add All (N)"
+ * label honest about what will actually be queued.
+ */
+export function getRecoveryDustThreshold(decimals: number): bigint {
+  return decimals >= 1 ? RECOVERY_DUST_THRESHOLD_NUMERATOR * 10n ** BigInt(decimals - 1) : 0n
+}
+
 export interface DelegationClaimResult {
   entries: ClaimCartEntry[]
   /** `stepGroupIdentifier` of the delegation's distribute step. Pass to
@@ -104,9 +115,7 @@ export function buildDelegationClaimEntries(inputs: DelegationClaimInputs): Dele
   // distribute, so a bare `splitContractBalance > 0n` check made the bulk
   // path queue a useless distribute every click. Only treat balances above
   // the threshold as a real stranded amount worth a distribute-only recovery.
-  const dustThreshold = decimals >= 1
-    ? RECOVERY_DUST_THRESHOLD_NUMERATOR * 10n ** BigInt(decimals - 1)
-    : 0n
+  const dustThreshold = getRecoveryDustThreshold(decimals)
   if (claimables.length === 0 && splitContractBalance < dustThreshold) {
     return { entries: [], distributeGroup: null }
   }

@@ -7,6 +7,7 @@ import { useTransactionCart } from "@/contexts/TransactionCartContext"
 import {
   buildDelegationClaimEntries,
   buildWarehouseWithdrawEntry,
+  getRecoveryDustThreshold,
   type ClaimCartEntry,
 } from "@/utils/claimCart"
 import { Icon } from "@/components/Icon"
@@ -58,16 +59,21 @@ export const ClaimAllDelegationRewardsButton = ({
 
   // Filter to delegations that have *anything* claimable — canonical, stranded
   // on a non-canonical rollup, or already swept into the split contract but
-  // awaiting distribute.
+  // awaiting distribute. The `splitContractBalance` arm uses the same dust
+  // threshold as `buildDelegationClaimEntries` so the button's "Add All (N)"
+  // count matches what actually gets queued; a bare `> 0n` here would let
+  // 0xSplits v2's 1-wei post-distribute residue inflate the count even
+  // though the builder discards those delegations downstream.
+  const dustThreshold = useMemo(() => getRecoveryDustThreshold(decimals ?? 18), [decimals])
   const claimableDelegations = useMemo(() => {
     const canonicalRollup = contracts.rollup.address.toLowerCase()
     return delegations.filter((d) => {
       const perRollup = d.rollupRewardsByRollup ?? []
       return perRollup.some((r) => r.rewards > 0n)
-        || (d.splitContractBalance ?? 0n) > 0n
+        || (d.splitContractBalance ?? 0n) >= dustThreshold
         || (d.rewards > 0n && !perRollup.some((r) => r.rollupAddress.toLowerCase() === canonicalRollup))
     })
-  }, [delegations])
+  }, [delegations, dustThreshold])
 
   const isReady = !!tokenAddress && !!beneficiary && !!warehouseAddress
 
