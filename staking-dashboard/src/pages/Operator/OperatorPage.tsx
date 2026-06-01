@@ -165,10 +165,19 @@ export default function OperatorPage() {
         canBatch={splitContracts.length > 0 && !!tokenAddress && !!warehouseAddress}
         onAddAll={() => {
           if (!tokenAddress || !warehouseAddress) return null
+          // Filter with the SAME predicate the visible list uses, so
+          // "Add All" only queues splits the operator can actually see.
+          // Without this, every previously-distributed split (1-wei
+          // 0xSplits v2 residue) gets a useless `Split.distribute` tx
+          // queued — see issue #86.
+          const dust = dustThresholdFor(decimals ?? 18)
+          const claimableSplits = splitContracts.filter((s) =>
+            splitHasClaimableValue(s, rollupRewardsBySplit, splitBalances, dust),
+          )
           return {
             tokenAddress,
             warehouseAddress,
-            inputs: splitContracts.map((s) => ({
+            inputs: claimableSplits.map((s) => ({
               splitContract: s.splitContract,
               providerRewardsRecipient: s.providerRewardsRecipient,
               delegatorBeneficiary: s.delegatorBeneficiary,
@@ -497,6 +506,33 @@ function dustThresholdFor(decimals: number): bigint {
   return decimals >= 1 ? DUST_THRESHOLD_NUMERATOR * 10n ** BigInt(decimals - 1) : 0n
 }
 
+/**
+ * Predicate: this split has at least dust-threshold worth of claimable value
+ * (rollup-pending + on-split ERC20). Used by BOTH the visible-list filter
+ * and the "Add All to Batch" filter so the two stay in sync.
+ *
+ * The reason it matters: 0xSplits v2 leaves 1 wei behind after every
+ * `distribute`, so any previously-distributed split has a non-zero
+ * `splitContractBalance` forever. Without this predicate, "Add All" would
+ * queue a `Split.distribute` for every historical split (integer-division
+ * → 0 to the operator → wasted gas). The visible list already hides
+ * these; the batch builder didn't, producing the 25-visible-vs-174-queued
+ * mismatch in issue #86.
+ */
+function splitHasClaimableValue(
+  s: OperatorSplitContract,
+  rollupRewardsBySplit: Map<string, CoinbaseBreakdown[]>,
+  splitBalances: Map<string, bigint>,
+  dust: bigint,
+): boolean {
+  const rollupTotal = (rollupRewardsBySplit.get(s.splitContract.toLowerCase()) ?? []).reduce(
+    (sum, r) => sum + r.rewards,
+    0n,
+  )
+  const onSplit = splitBalances.get(s.splitContract.toLowerCase()) ?? 0n
+  return rollupTotal + onSplit >= dust
+}
+
 function SplitsList({
   splitContracts,
   rollupRewardsBySplit,
@@ -517,14 +553,9 @@ function SplitsList({
   const dust = useMemo(() => dustThresholdFor(decimals), [decimals])
   const visibleSplits = useMemo(() => {
     if (!hideEmptySplits) return splitContracts
-    return splitContracts.filter((s) => {
-      const rollupTotal = (rollupRewardsBySplit.get(s.splitContract.toLowerCase()) ?? []).reduce(
-        (sum, r) => sum + r.rewards,
-        0n,
-      )
-      const onSplit = splitBalances.get(s.splitContract.toLowerCase()) ?? 0n
-      return rollupTotal + onSplit >= dust
-    })
+    return splitContracts.filter((s) =>
+      splitHasClaimableValue(s, rollupRewardsBySplit, splitBalances, dust),
+    )
   }, [splitContracts, rollupRewardsBySplit, splitBalances, hideEmptySplits, dust])
 
   if (isLoading) {
