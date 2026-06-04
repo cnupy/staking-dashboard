@@ -90,6 +90,11 @@ ponder.on("ATPFactoryAuction:ATPCreated", async (params) => {
   await handleATPCreated(params, "auction");
 });
 
+// MATP / LATP handlers stay registered on every env. When their env
+// vars aren't set, ponder.config.ts falls those contracts back to the
+// zero address — `eth_getLogs(0x0)` returns no events, so these
+// handlers simply never fire on envs (e.g., testnet) where the
+// factories aren't deployed.
 ponder.on("ATPFactoryMATP:ATPCreated", async (params) => {
   await handleATPCreated(params, "matp");
 });
