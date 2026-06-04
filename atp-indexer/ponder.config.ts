@@ -86,24 +86,33 @@ export default createConfig({
     },
 
     /**
-     * ATP Factory - MATP contract
-     * Issues milestone-based ATPs (MATPs)
+     * ATP Factory - MATP contract (milestone-based ATPs).
+     *
+     * Falls back to the zero address when `ATP_FACTORY_MATP_ADDRESS`
+     * isn't set (testnet doesn't deploy this factory). Ponder scans
+     * the zero address for events, finds none, the handler never fires
+     * — keeping the contract statically present in the config so the
+     * generated `EventNames` union includes it, which is required for
+     * `ponder.on("ATPFactoryMATP:…", …)` in `events/atp-factory/` to
+     * typecheck on every env regardless of which factories are deployed.
      */
     ATPFactoryMATP: {
       chain: config.networkName,
       abi: ATP_ABI,
-      address: config.ATP_FACTORY_MATP_ADDRESS as `0x${string}`,
+      address: (config.ATP_FACTORY_MATP_ADDRESS
+        ?? "0x0000000000000000000000000000000000000000") as `0x${string}`,
       startBlock: FACTORY_START_BLOCKS.matp,
     },
 
     /**
-     * ATP Factory - LATP contract
-     * Issues linear vesting ATPs (LATPs) and MATPs
+     * ATP Factory - LATP contract (linear-vesting ATPs).
+     * Same zero-address fallback pattern as MATP above.
      */
     ATPFactoryLATP: {
       chain: config.networkName,
       abi: ATP_ABI,
-      address: config.ATP_FACTORY_LATP_ADDRESS as `0x${string}`,
+      address: (config.ATP_FACTORY_LATP_ADDRESS
+        ?? "0x0000000000000000000000000000000000000000") as `0x${string}`,
       startBlock: FACTORY_START_BLOCKS.latp,
     },
 
@@ -156,8 +165,11 @@ export default createConfig({
 
     /**
      * Dynamic ATP Contracts
-     * Created by factory events, tracks operator updates
-     * Uses factory pattern to only index ATPs created by all 4 factories
+     * Created by factory events, tracks operator updates.
+     * Unset MATP / LATP factory env vars resolve to the zero address;
+     * `eth_getLogs(zeroAddress)` returns empty, so the factory pattern
+     * just sees no `ATPCreated` events from those slots on envs where
+     * those factories aren't deployed.
      */
     ATP: {
       chain: config.networkName,
@@ -166,8 +178,10 @@ export default createConfig({
         address: [
           config.ATP_FACTORY_ADDRESS as `0x${string}`,
           config.ATP_FACTORY_AUCTION_ADDRESS as `0x${string}`,
-          config.ATP_FACTORY_MATP_ADDRESS as `0x${string}`,
-          config.ATP_FACTORY_LATP_ADDRESS as `0x${string}`,
+          (config.ATP_FACTORY_MATP_ADDRESS
+            ?? "0x0000000000000000000000000000000000000000") as `0x${string}`,
+          (config.ATP_FACTORY_LATP_ADDRESS
+            ?? "0x0000000000000000000000000000000000000000") as `0x${string}`,
         ],
         event: ATPCreatedEvent,
         parameter: "atp",
