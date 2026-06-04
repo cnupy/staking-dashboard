@@ -49,11 +49,20 @@ const configSchema = z.object({
   ATP_FACTORY_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
   ATP_FACTORY_AUCTION_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
   // MATP/LATP factories aren't deployed in every environment (e.g.,
-  // testnet has only genesis + auction). Treat them as optional and
-  // gate their contract registration + handlers in ponder.config.ts /
-  // events/atp-factory so the indexer boots cleanly on lighter envs.
-  ATP_FACTORY_MATP_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format').optional(),
-  ATP_FACTORY_LATP_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format').optional(),
+  // testnet has only genesis + auction). The deploy pipeline propagates
+  // unset GitHub Actions vars → terraform vars → ECS env as the empty
+  // string `""`, NOT as undefined, so we preprocess `""` → undefined
+  // before the regex check; `.optional()` then accepts undefined.
+  // ponder.config.ts falls back to the zero address when these resolve
+  // to undefined, see comments there.
+  ATP_FACTORY_MATP_ADDRESS: z.preprocess(
+    (val) => (val === '' ? undefined : val),
+    z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format').optional(),
+  ),
+  ATP_FACTORY_LATP_ADDRESS: z.preprocess(
+    (val) => (val === '' ? undefined : val),
+    z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format').optional(),
+  ),
   STAKING_REGISTRY_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
   REGISTRY_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
 
