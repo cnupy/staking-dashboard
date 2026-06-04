@@ -12,7 +12,7 @@ import { formatBlockTimestamp } from "@/utils/dateFormatters"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { getValidatorDashboardValidatorUrl } from "@/utils/validatorDashboardUtils"
 import { getExplorerTxUrl, getExplorerAddressUrl } from "@/utils/explorerUtils"
-import { useSequencerStatus, SequencerStatus, useStakeHealth, useIsRewardsClaimable } from "@/hooks/rollup"
+import { useSequencerStatus, SequencerStatus, useStakeHealth } from "@/hooks/rollup"
 import { useGovernanceConfig } from "@/hooks/governance"
 import { useClaimAllContext } from "@/contexts/ClaimAllContext"
 import { WalletWithdrawalActions } from "./WalletWithdrawalActions"
@@ -43,8 +43,6 @@ export const WalletDelegationItem = ({
   const { symbol, decimals } = useStakingAssetTokenDetails()
   const { date, time } = formatBlockTimestamp(delegation.timestamp)
   const { getSplitStatus, claimAllHook } = useClaimAllContext()
-  const { isRewardsClaimable } = useIsRewardsClaimable()
-
   const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(delegation.attesterAddress as Address)
   const { withdrawalDelayDays } = useGovernanceConfig()
 
@@ -339,16 +337,14 @@ export const WalletDelegationItem = ({
                           providerTakeRate: delegation.providerTakeRate,
                           providerRewardsRecipient: delegation.providerRewardsRecipient
                         })}
-                        disabled={delegation.rewards === 0n || isInBatch || isRewardsClaimable === false}
+                        disabled={delegation.rewards === 0n || isInBatch}
                         className="px-3 py-1.5 border font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-parchment/10 disabled:border-parchment/30 disabled:text-parchment/60 border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90"
                         title={
-                          isRewardsClaimable === false
-                            ? "Rewards are currently locked by the network protocol"
-                            : delegation.rewards === 0n
-                              ? "No rewards to claim"
-                              : isInBatch
-                                ? "Processing in batch"
-                                : "Claim delegation rewards"
+                          delegation.rewards === 0n
+                            ? "No rewards to claim"
+                            : isInBatch
+                              ? "Processing in batch"
+                              : "Claim delegation rewards"
                         }
                       >
                         {isProcessingInBatch ? (
@@ -360,13 +356,9 @@ export const WalletDelegationItem = ({
                           'Claim Rewards'
                         )}
                       </button>
-                      {(delegation.rewards === 0n || isRewardsClaimable === false) && (
+                      {delegation.rewards === 0n && (
                         <TooltipIcon
-                          content={
-                            isRewardsClaimable === false
-                              ? "All rewards are currently locked by the network protocol."
-                              : "No rewards available to claim yet."
-                          }
+                          content="No rewards available to claim yet."
                           size="sm"
                           maxWidth="max-w-xs"
                         />

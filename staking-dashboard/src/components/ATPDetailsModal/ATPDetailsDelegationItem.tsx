@@ -13,7 +13,6 @@ import { getValidatorDashboardValidatorUrl } from "@/utils/validatorDashboardUti
 import { getExplorerTxUrl, getExplorerAddressUrl } from "@/utils/explorerUtils"
 import { useSequencerStatus, SequencerStatus } from "@/hooks/rollup/useSequencerStatus"
 import { useStakeHealth } from "@/hooks/rollup/useStakeHealth"
-import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import { useGovernanceConfig } from "@/hooks/governance"
 import { useClaimAllContext } from "@/contexts/ClaimAllContext"
 import { WithdrawalActions } from "./WithdrawalActions"
@@ -58,8 +57,6 @@ export const ATPDetailsDelegationItem = ({
   const { symbol, decimals } = useStakingAssetTokenDetails()
   const { date, time } = formatBlockTimestamp(delegation.timestamp)
   const { getSplitStatus, claimAllHook } = useClaimAllContext()
-  const { isRewardsClaimable } = useIsRewardsClaimable()
-
   const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(delegation.operatorAddress as Address)
   const { withdrawalDelayDays } = useGovernanceConfig()
 
@@ -445,16 +442,14 @@ export const ATPDetailsDelegationItem = ({
                           providerTakeRate: delegation.providerTakeRate,
                           providerRewardsRecipient: delegation.providerRewardsRecipient
                         })}
-                        disabled={delegationRewards.userRewards === 0n || isInBatch || isRewardsClaimable === false}
+                        disabled={delegationRewards.userRewards === 0n || isInBatch}
                         className="px-3 py-1.5 border font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-parchment/10 disabled:border-parchment/30 disabled:text-parchment/60 border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90"
                         title={
-                          isRewardsClaimable === false
-                            ? "Rewards are currently locked by the network protocol"
-                            : delegationRewards.userRewards === 0n
-                              ? "No rewards to claim"
-                              : isInBatch
-                                ? "Processing in batch"
-                                : "Claim delegation rewards"
+                          delegationRewards.userRewards === 0n
+                            ? "No rewards to claim"
+                            : isInBatch
+                              ? "Processing in batch"
+                              : "Claim delegation rewards"
                         }
                       >
                         {isProcessingInBatch ? (
@@ -466,13 +461,9 @@ export const ATPDetailsDelegationItem = ({
                           'Claim Rewards'
                         )}
                       </button>
-                      {(delegationRewards.userRewards === 0n || isRewardsClaimable === false) && (
+                      {delegationRewards.userRewards === 0n && (
                         <TooltipIcon
-                          content={
-                            isRewardsClaimable === false
-                              ? "All rewards are currently locked by the network protocol. Claiming will be enabled once the protocol unlocks rewards."
-                              : "No rewards available to claim yet. Rewards will accumulate as your delegated sequencer validates blocks."
-                          }
+                          content="No rewards available to claim yet. Rewards will accumulate as your delegated sequencer validates blocks."
                           size="sm"
                           maxWidth="max-w-xs"
                         />

@@ -4,7 +4,6 @@ import { Icon } from "@/components/Icon"
 import { formatTokenAmount } from "@/utils/atpFormatters"
 import { getValidatorDashboardValidatorUrl } from "@/utils/validatorDashboardUtils"
 import { getExplorerTxUrl } from "@/utils/explorerUtils"
-import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import type { ATPData } from "@/hooks/atp"
 import type { DirectStakeBreakdown, Erc20DirectStakeBreakdown } from "@/hooks/atp/useAggregatedStakingData"
 
@@ -32,7 +31,6 @@ export const ATPStakingOverviewDirectStakeItem = ({
   onWalletClick,
   onClaimClick
 }: ATPStakingOverviewDirectStakeItemProps) => {
-  const { isRewardsClaimable } = useIsRewardsClaimable()
   const isWallet = variant === 'wallet'
 
   return (
@@ -119,19 +117,11 @@ export const ATPStakingOverviewDirectStakeItem = ({
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => onClaimClick?.(stake as DirectStakeBreakdown, atp)}
-                  disabled={isRewardsClaimable === false}
-                  className="px-2 py-0.5 border font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-parchment/10 disabled:border-parchment/30 disabled:text-parchment/60 border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90"
-                  title={isRewardsClaimable === false ? "Rewards are currently locked by the network protocol" : "Claim self-stake rewards"}
+                  className="px-2 py-0.5 border font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-colors border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90"
+                  title="Claim self-stake rewards"
                 >
                   Claim
                 </button>
-                {isRewardsClaimable === false && (
-                  <TooltipIcon
-                    content="All rewards are currently locked by the network protocol. Claiming will be enabled once the protocol unlocks rewards."
-                    size="sm"
-                    maxWidth="max-w-xs"
-                  />
-                )}
               </div>
             )}
           </div>

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react"
 import { useAggregatedStakingData } from "@/hooks/atp/useAggregatedStakingData"
 import { useMultipleStakeableAmounts } from "@/hooks/atp/useMultipleStakeableAmounts"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
-import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import { useCoinbaseAddresses, useMultipleCoinbaseRewards } from "@/hooks/rewards"
 import { ATPDetailsModal } from "@/components/ATPDetailsModal"
 import { ATPStakingOverviewSkeleton } from "./ATPStakingOverviewSkeleton"
@@ -57,9 +56,6 @@ export const ATPStakingOverview = ({ atpData, walletBalance = 0n }: ATPStakingOv
     activationThreshold,
     isLoading: isLoadingStakeable,
   } = useMultipleStakeableAmounts(atpData)
-
-  // Check if rewards are claimable
-  const { isRewardsClaimable } = useIsRewardsClaimable()
 
   // Get coinbase addresses and their rewards for self-stake tracking
   const { coinbaseAddresses } = useCoinbaseAddresses()
@@ -179,7 +175,6 @@ export const ATPStakingOverview = ({ atpData, walletBalance = 0n }: ATPStakingOv
               totalRewards={totalRewards}
               selfStakeRewards={totalCoinbaseRewards}
               pendingWarehouseWithdrawal={pendingWarehouseWithdrawal}
-              isRewardsClaimable={isRewardsClaimable}
               isExpanded={isTotalRewardsExpanded}
               onToggle={() => setIsTotalRewardsExpanded(!isTotalRewardsExpanded)}
               decimals={decimals}

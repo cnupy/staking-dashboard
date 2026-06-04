@@ -9,7 +9,6 @@ interface ClaimAllRewardsSummaryProps {
   pendingWarehouseWithdrawal?: bigint
   decimals: number
   symbol: string
-  isRewardsClaimable: boolean
   onStartClaiming: () => void
   isDisabled: boolean
 }
@@ -23,7 +22,6 @@ export const ClaimAllRewardsSummary = ({
   pendingWarehouseWithdrawal = 0n,
   decimals,
   symbol,
-  isRewardsClaimable,
   onStartClaiming,
   isDisabled
 }: ClaimAllRewardsSummaryProps) => {
@@ -41,21 +39,6 @@ export const ClaimAllRewardsSummary = ({
 
   return (
     <div className="space-y-6">
-      {/* Rewards Locked Warning */}
-      {!isRewardsClaimable && (
-        <div className="bg-amber-500/10 border border-amber-500/30 p-4">
-          <div className="flex items-start gap-3">
-            <Icon name="warning" size="md" className="text-amber-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-amber-500 font-bold text-sm">Rewards Locked</p>
-              <p className="text-parchment/60 text-xs mt-1">
-                Rewards are currently locked and cannot be claimed. Check back later.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Total */}
       <div className="bg-chartreuse/10 border border-chartreuse/30 p-4">
         <div className="text-xs text-parchment/60 uppercase tracking-wide mb-1">
@@ -187,18 +170,14 @@ export const ClaimAllRewardsSummary = ({
       {/* Claim Button */}
       <button
         onClick={onStartClaiming}
-        disabled={isDisabled || !hasRewards || !isRewardsClaimable}
+        disabled={isDisabled || !hasRewards}
         className="w-full py-4 bg-chartreuse text-ink font-oracle-standard font-bold text-sm uppercase tracking-wider hover:bg-chartreuse/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {!isRewardsClaimable
-          ? "Rewards Locked"
-          : !hasRewards
-            ? "No Rewards to Claim"
-            : "Claim All Rewards"}
+        {!hasRewards ? "No Rewards to Claim" : "Claim All Rewards"}
       </button>
 
       {/* Transaction Info */}
-      {hasRewards && isRewardsClaimable && (
+      {hasRewards && (
         <p className="text-xs text-parchment/40 text-center">
           This will require multiple transactions. Each claim will prompt for approval.
         </p>

@@ -13,7 +13,6 @@ interface SplitContractItemProps {
   decimals: number
   symbol: string
   tokenAddress: Address
-  isRewardsClaimable: boolean
   onRemove?: () => void
   isRemoving: boolean
 }
@@ -23,7 +22,6 @@ const SplitContractItem = ({
   decimals,
   symbol,
   tokenAddress,
-  isRewardsClaimable,
   onRemove,
   isRemoving
 }: SplitContractItemProps) => {
@@ -125,15 +123,9 @@ const SplitContractItem = ({
       {/* Info about claiming */}
       {userShare > 0n && !isLoading && (
         <div className="mt-3 pt-3 border-t border-parchment/10">
-          {isRewardsClaimable ? (
-            <p className="text-xs text-parchment/60">
-              To claim rewards, go to your Token Vault details and use the delegation claim flow.
-            </p>
-          ) : (
-            <p className="text-xs text-parchment/60">
-              Rewards are currently locked. Check back later.
-            </p>
-          )}
+          <p className="text-xs text-parchment/60">
+            To claim rewards, go to your Token Vault details and use the delegation claim flow.
+          </p>
         </div>
       )}
     </div>
@@ -145,7 +137,6 @@ interface SplitContractListProps {
   decimals: number
   symbol: string
   tokenAddress: Address | undefined
-  isRewardsClaimable: boolean
   isLoading?: boolean
   onRefetch?: () => void
 }
@@ -158,7 +149,6 @@ export const SplitContractList = ({
   decimals,
   symbol,
   tokenAddress,
-  isRewardsClaimable,
   isLoading,
   onRefetch
 }: SplitContractListProps) => {
@@ -218,7 +208,6 @@ export const SplitContractList = ({
                 decimals={decimals}
                 symbol={symbol}
                 tokenAddress={tokenAddress}
-                isRewardsClaimable={isRewardsClaimable}
                 isRemoving={isRemoving}
               />
             ))}
@@ -240,7 +229,6 @@ export const SplitContractList = ({
                 decimals={decimals}
                 symbol={symbol}
                 tokenAddress={tokenAddress}
-                isRewardsClaimable={isRewardsClaimable}
                 onRemove={() => handleRemove(split.address)}
                 isRemoving={isRemoving}
               />

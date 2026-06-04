@@ -11,7 +11,6 @@ interface ATPStakingOverviewClaimableRewardsProps {
   totalRewards: bigint
   selfStakeRewards?: bigint
   pendingWarehouseWithdrawal?: bigint
-  isRewardsClaimable?: boolean
   isExpanded: boolean
   onToggle: () => void
   decimals: number
@@ -25,7 +24,7 @@ interface ATPStakingOverviewClaimableRewardsProps {
  * Displays claimable delegation rewards and self-stake rewards
  */
 export const ATPStakingOverviewClaimableRewards = forwardRef<HTMLDivElement, ATPStakingOverviewClaimableRewardsProps>(
-  ({ totalRewards, selfStakeRewards = 0n, pendingWarehouseWithdrawal = 0n, isRewardsClaimable = true, isExpanded, onToggle, decimals, symbol, delegationBreakdown = [], coinbaseBreakdown = [], onClaimSuccess }, ref) => {
+  ({ totalRewards, selfStakeRewards = 0n, pendingWarehouseWithdrawal = 0n, isExpanded, onToggle, decimals, symbol, delegationBreakdown = [], coinbaseBreakdown = [], onClaimSuccess }, ref) => {
     const [isManageModalOpen, setIsManageModalOpen] = useState(false)
     const [isClaimAllModalOpen, setIsClaimAllModalOpen] = useState(false)
 
@@ -85,18 +84,6 @@ export const ATPStakingOverviewClaimableRewards = forwardRef<HTMLDivElement, ATP
                 </div>
               </div>
 
-              {/* Rewards Locked Warning */}
-              {!isRewardsClaimable && (
-                <div className="mt-4 pt-4 border-t border-parchment/10">
-                  <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 p-2">
-                    <Icon name="lock" size="sm" className="text-amber-500 flex-shrink-0" />
-                    <span className="text-xs text-amber-200">
-                      Rewards are currently locked
-                    </span>
-                  </div>
-                </div>
-              )}
-
               {/* Info message when no rewards */}
               {combinedTotalRewards === 0n && (
                 <div className="mt-4 pt-4 border-t border-parchment/10">
@@ -117,7 +104,7 @@ export const ATPStakingOverviewClaimableRewards = forwardRef<HTMLDivElement, ATP
                     e.stopPropagation()
                     setIsClaimAllModalOpen(true)
                   }}
-                  disabled={!isRewardsClaimable || combinedTotalRewards === 0n}
+                  disabled={combinedTotalRewards === 0n}
                   className="w-full py-2 bg-chartreuse text-ink text-sm font-bold uppercase tracking-wide hover:bg-chartreuse/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Icon name="gift" size="sm" />

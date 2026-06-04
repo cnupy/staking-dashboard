@@ -3,7 +3,6 @@ import { createPortal } from "react-dom"
 import { Icon } from "@/components/Icon"
 import { useClaimAllRewards } from "@/hooks/rewards"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
-import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import { ClaimAllRewardsSummary } from "./ClaimAllRewardsSummary"
 import { ClaimAllRewardsProgress } from "./ClaimAllRewardsProgress"
 import { ClaimAllRewardsSuccess } from "./ClaimAllRewardsSuccess"
@@ -37,9 +36,6 @@ export const ClaimAllRewardsModal = ({
 
   // Token details
   const { symbol, decimals } = useStakingAssetTokenDetails()
-
-  // Check if rewards are claimable
-  const { isRewardsClaimable } = useIsRewardsClaimable()
 
   // Claim hook
   const claimAllRewards = useClaimAllRewards()
@@ -154,7 +150,6 @@ export const ClaimAllRewardsModal = ({
               pendingWarehouseWithdrawal={pendingWarehouseWithdrawal}
               decimals={decimals ?? 18}
               symbol={symbol ?? ""}
-              isRewardsClaimable={isRewardsClaimable ?? false}
               onStartClaiming={handleStartClaiming}
               isDisabled={false}
             />

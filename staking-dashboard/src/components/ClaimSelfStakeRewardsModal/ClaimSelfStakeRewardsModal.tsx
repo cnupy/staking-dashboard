@@ -7,7 +7,6 @@ import { debounce } from "@/utils/debounce"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
 import { useSequencerRewards } from "@/hooks/rollup/useSequencerRewards"
 import { useClaimSequencerRewards } from "@/hooks/rollup/useClaimSequencerRewards"
-import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import { useAlert } from "@/contexts/AlertContext"
 import type { ATPData } from "@/hooks/atp"
 import type { Address } from "viem"
@@ -57,8 +56,6 @@ export const ClaimSelfStakeRewardsModal = ({
     error,
     reset
   } = useClaimSequencerRewards()
-
-  const { isRewardsClaimable } = useIsRewardsClaimable()
 
   // Create debounced check function that manages debouncing state
   const debouncedCheckRewards = useMemo(
@@ -232,17 +229,6 @@ export const ClaimSelfStakeRewardsModal = ({
                 </div>
               )}
 
-              {/* Rewards Not Claimable Warning */}
-              {isRewardsClaimable === false && (
-                <div className="bg-parchment/10 border border-parchment/30 p-4 mb-6">
-                  <div className="text-xs font-oracle-standard font-bold text-parchment mb-1 uppercase tracking-wide">
-                    Rewards Currently Locked
-                  </div>
-                  <div className="text-xs text-parchment/80">
-                    All rewards are currently locked by the network protocol (rollup). Claiming will be enabled once the protocol unlocks rewards.
-                  </div>
-                </div>
-              )}
             </>
           )}
 
@@ -270,8 +256,7 @@ export const ClaimSelfStakeRewardsModal = ({
                 !rewards ||
                 rewards === 0n ||
                 isPending ||
-                isConfirming ||
-                isRewardsClaimable === false
+                isConfirming
               }
               className="px-6 py-3 bg-chartreuse text-ink font-oracle-standard font-bold text-sm uppercase tracking-wider hover:bg-chartreuse/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >

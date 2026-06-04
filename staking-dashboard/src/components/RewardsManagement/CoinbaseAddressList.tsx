@@ -9,7 +9,6 @@ interface CoinbaseAddressListProps {
   coinbaseBreakdown: CoinbaseBreakdown[]
   decimals: number
   symbol: string
-  isRewardsClaimable: boolean
   isLoading?: boolean
   onRefetch?: () => void
 }
@@ -21,7 +20,6 @@ export const CoinbaseAddressList = ({
   coinbaseBreakdown,
   decimals,
   symbol,
-  isRewardsClaimable,
   isLoading,
   onRefetch
 }: CoinbaseAddressListProps) => {
@@ -100,26 +98,20 @@ export const CoinbaseAddressList = ({
           {/* Claim Button */}
           {item.rewards > 0n && (
             <div className="mt-3 pt-3 border-t border-parchment/10">
-              {isRewardsClaimable ? (
-                <button
-                  onClick={() => handleClaim(item.address)}
-                  disabled={claimRewards.isPending || claimRewards.isConfirming}
-                  className="w-full py-2 bg-chartreuse text-ink font-bold text-sm uppercase tracking-wide hover:bg-chartreuse/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {claimRewards.isPending || claimRewards.isConfirming ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Icon name="loader" size="sm" className="animate-spin" />
-                      {claimRewards.isPending ? "Confirming..." : "Processing..."}
-                    </span>
-                  ) : (
-                    "Claim Rewards"
-                  )}
-                </button>
-              ) : (
-                <div className="text-center py-2 text-parchment/60 text-sm">
-                  Rewards are currently locked
-                </div>
-              )}
+              <button
+                onClick={() => handleClaim(item.address)}
+                disabled={claimRewards.isPending || claimRewards.isConfirming}
+                className="w-full py-2 bg-chartreuse text-ink font-bold text-sm uppercase tracking-wide hover:bg-chartreuse/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {claimRewards.isPending || claimRewards.isConfirming ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Icon name="loader" size="sm" className="animate-spin" />
+                    {claimRewards.isPending ? "Confirming..." : "Processing..."}
+                  </span>
+                ) : (
+                  "Claim Rewards"
+                )}
+              </button>
             </div>
           )}
         </div>

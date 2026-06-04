@@ -1,7 +1,6 @@
 import { useEffect, useMemo } from "react"
 import { useAccount } from "wagmi"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
-import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import { useClaimAllContext } from "@/contexts/ClaimAllContext"
 import { useAlert } from "@/contexts/AlertContext"
 import type { Address } from "viem"
@@ -28,7 +27,6 @@ export const ClaimAllDelegationRewardsButton = ({
 }: ClaimAllDelegationRewardsButtonProps) => {
   const { address: beneficiary } = useAccount() // TODO : should get the address from atp.beneficiary to handle the condition where the connected address is operator
   const { stakingAssetAddress: tokenAddress } = useStakingAssetTokenDetails()
-  const { isRewardsClaimable } = useIsRewardsClaimable()
   const { claimAllHook } = useClaimAllContext()
   const { showAlert } = useAlert()
 
@@ -81,7 +79,7 @@ export const ClaimAllDelegationRewardsButton = ({
     claimAllHook.claimAll(tasks)
   }
 
-  if (delegationsWithRewards.length === 0 || isRewardsClaimable === false) {
+  if (delegationsWithRewards.length === 0) {
     return null
   }
 

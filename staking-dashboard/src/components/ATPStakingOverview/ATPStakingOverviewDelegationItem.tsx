@@ -4,7 +4,6 @@ import { Icon } from "@/components/Icon"
 import { formatTokenAmount } from "@/utils/atpFormatters"
 import { getValidatorDashboardValidatorUrl } from "@/utils/validatorDashboardUtils"
 import { getExplorerTxUrl } from "@/utils/explorerUtils"
-import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import { useClaimAllContext } from "@/contexts/ClaimAllContext"
 import type { ATPData } from "@/hooks/atp"
 import type { DelegationBreakdown, Erc20DelegationBreakdown } from "@/hooks/atp/useAggregatedStakingData"
@@ -35,7 +34,6 @@ export const ATPStakingOverviewDelegationItem = ({
   onClaimClick
 }: ATPStakingOverviewDelegationItemProps) => {
   const { getSplitStatus, claimAllHook } = useClaimAllContext()
-  const { isRewardsClaimable } = useIsRewardsClaimable()
   const isWallet = variant === 'wallet'
 
   const splitStatus = getSplitStatus(delegation.splitContract as Address)
@@ -152,12 +150,10 @@ export const ATPStakingOverviewDelegationItem = ({
                 </div>
                 <button
                   onClick={() => onClaimClick(delegation)}
-                  disabled={delegation.rewards === 0n || isInBatch || isRewardsClaimable === false}
+                  disabled={delegation.rewards === 0n || isInBatch}
                   className="px-2 py-0.5 border font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-parchment/10 disabled:border-parchment/30 disabled:text-parchment/60 border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90"
                   title={
-                    isRewardsClaimable === false
-                      ? "Rewards are currently locked by the network protocol"
-                      : delegation.rewards === 0n
+                    delegation.rewards === 0n
                       ? "No rewards to claim"
                       : isInBatch
                       ? "Processing in batch"
@@ -173,13 +169,6 @@ export const ATPStakingOverviewDelegationItem = ({
                     'Claim'
                   )}
                 </button>
-                {isRewardsClaimable === false && (
-                  <TooltipIcon
-                    content="All rewards are currently locked by the network protocol. Claiming will be enabled once the protocol unlocks rewards."
-                    size="sm"
-                    maxWidth="max-w-xs"
-                  />
-                )}
               </div>
             )}
           </div>

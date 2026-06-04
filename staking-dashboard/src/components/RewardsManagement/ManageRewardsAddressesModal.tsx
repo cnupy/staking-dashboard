@@ -2,7 +2,6 @@ import { useState, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { Icon } from "@/components/Icon"
 import { useStakingAssetTokenDetails } from "@/hooks/stakingRegistry"
-import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import { useAggregatedStakingData } from "@/hooks/atp/useAggregatedStakingData"
 import {
   useCoinbaseAddresses,
@@ -14,7 +13,6 @@ import {
 import { AddAddressForm } from "./AddAddressForm"
 import { CoinbaseAddressList } from "./CoinbaseAddressList"
 import { SplitContractList } from "./SplitContractList"
-import { RewardsLockedBanner } from "./RewardsLockedBanner"
 import type { Address } from "viem"
 import type { SplitContractWithSource } from "./types"
 
@@ -37,9 +35,6 @@ export const ManageRewardsAddressesModal = ({
 
   // Token details
   const { symbol, decimals, stakingAssetAddress: tokenAddress } = useStakingAssetTokenDetails()
-
-  // Check if rewards are claimable
-  const { isRewardsClaimable } = useIsRewardsClaimable()
 
   // Coinbase addresses
   const {
@@ -154,11 +149,6 @@ export const ManageRewardsAddressesModal = ({
             </div>
           </div>
 
-          {/* Rewards Locked Banner */}
-          {isRewardsClaimable === false && (
-            <RewardsLockedBanner className="mb-6" />
-          )}
-
           {/* Tabs */}
           <div className="flex border-b border-parchment/20 mb-6">
             <button
@@ -209,7 +199,6 @@ export const ManageRewardsAddressesModal = ({
                   coinbaseBreakdown={coinbaseBreakdown}
                   decimals={decimals ?? 18}
                   symbol={symbol ?? ""}
-                  isRewardsClaimable={isRewardsClaimable ?? false}
                   isLoading={isLoadingCoinbaseAddresses || isLoadingCoinbaseRewards}
                   onRefetch={handleRefetchCoinbase}
                 />
@@ -243,7 +232,6 @@ export const ManageRewardsAddressesModal = ({
                   decimals={decimals ?? 18}
                   symbol={symbol ?? ""}
                   tokenAddress={tokenAddress}
-                  isRewardsClaimable={isRewardsClaimable ?? false}
                   isLoading={isLoadingSplitAddresses || isLoadingDelegations}
                   onRefetch={refetchSplitAddresses}
                 />

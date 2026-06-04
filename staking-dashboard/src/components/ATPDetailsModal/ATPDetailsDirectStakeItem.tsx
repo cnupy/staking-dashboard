@@ -12,7 +12,6 @@ import { getValidatorDashboardValidatorUrl } from "@/utils/validatorDashboardUti
 import { getExplorerTxUrl } from "@/utils/explorerUtils"
 import { useSequencerStatus, SequencerStatus } from "@/hooks/rollup/useSequencerStatus"
 import { useStakeHealth } from "@/hooks/rollup/useStakeHealth"
-import { useIsRewardsClaimable } from "@/hooks/rollup/useIsRewardsClaimable"
 import { useGovernanceConfig } from "@/hooks/governance"
 import { ClaimSelfStakeRewardsModal } from "@/components/ClaimSelfStakeRewardsModal"
 import { WithdrawalActions } from "./WithdrawalActions"
@@ -41,8 +40,6 @@ export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion,
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false)
   const { symbol, decimals } = useStakingAssetTokenDetails()
   const { date, time } = formatBlockTimestamp(stake.timestamp)
-  const { isRewardsClaimable } = useIsRewardsClaimable()
-
   const { status, statusLabel, isLoading: isLoadingStatus, canFinalize, actualUnlockTime, refetch: refetchStatus } = useSequencerStatus(stake.attesterAddress as Address)
   const { withdrawalDelayDays } = useGovernanceConfig()
 
@@ -366,19 +363,11 @@ export const ATPDetailsDirectStakeItem = ({ stake, stakerAddress, rollupVersion,
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setIsClaimModalOpen(true)}
-                        disabled={isRewardsClaimable === false}
-                        className="px-3 py-1.5 border font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-parchment/10 disabled:border-parchment/30 disabled:text-parchment/60 border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90"
-                        title={isRewardsClaimable === false ? "Rewards are currently locked by the network protocol" : "Claim self-stake rewards"}
+                        className="px-3 py-1.5 border font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-colors border-chartreuse bg-chartreuse text-ink hover:bg-chartreuse/90"
+                        title="Claim self-stake rewards"
                       >
                         Claim Rewards
                       </button>
-                      {isRewardsClaimable === false && (
-                        <TooltipIcon
-                          content="All rewards are currently locked by the network protocol. Claiming will be enabled once the protocol unlocks rewards."
-                          size="sm"
-                          maxWidth="max-w-xs"
-                        />
-                      )}
                     </div>
                   </div>
                 )}
