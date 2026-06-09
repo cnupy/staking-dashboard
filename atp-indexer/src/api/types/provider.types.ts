@@ -13,6 +13,14 @@ export interface ProviderSummary {
   website: string;
   logo_url: string;
   providerSelfStake?: string[];
+  /**
+   * Operator-self-declared URL pointing at where they publish payout
+   * audit reports from the `aztec-staking-payout` tool. Presence
+   * means the operator distributes rewards manually rather than via
+   * the on-chain split contracts; the dashboard uses this as a hint
+   * to render a "manual payouts" badge / disable claim CTAs.
+   */
+  manualPayoutAuditUrl?: string;
 }
 
 export interface NotAssociatedStake {
@@ -111,4 +119,10 @@ export interface ProviderDetailsResponse {
   stakes: ProviderStake[];
   takeRateHistory: ProviderTakeRateUpdate[];
   providerSelfStake?: string[];
+  /**
+   * Operator-self-declared URL pointing at where they publish payout
+   * audit reports from the `aztec-staking-payout` tool. See
+   * `ProviderSummary.manualPayoutAuditUrl`.
+   */
+  manualPayoutAuditUrl?: string;
 }

@@ -71,7 +71,8 @@ export const ATPStakingOverviewBreakdownSection = ({
       splitContract: delegation.splitContract as Address,
       providerName: delegation.providerName!,
       providerTakeRate: delegation.providerTakeRate,
-      providerRewardsRecipient: delegation.providerRewardsRecipient as Address
+      providerRewardsRecipient: delegation.providerRewardsRecipient as Address,
+      manualPayoutAuditUrl: delegation.manualPayoutAuditUrl,
     })
     setIsDelegationClaimModalOpen(true)
   }
@@ -233,6 +234,7 @@ export const ATPStakingOverviewBreakdownSection = ({
                       splitContractBalance: d.splitContractBalance,
                       providerName: d.providerName,
                       providerId: d.providerId,
+                      manualPayoutAuditUrl: d.manualPayoutAuditUrl,
                     })),
                     ...filteredErc20Delegations.map(d => ({
                       splitContract: d.splitContract as `0x${string}`,
@@ -243,6 +245,7 @@ export const ATPStakingOverviewBreakdownSection = ({
                       splitContractBalance: d.splitContractBalance,
                       providerName: d.providerName,
                       providerId: d.providerId,
+                      manualPayoutAuditUrl: d.manualPayoutAuditUrl,
                     }))
                   ]}
                   onSuccess={handleRefetchAll}

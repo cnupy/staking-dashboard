@@ -17,6 +17,13 @@ export interface ProviderListItem {
   logo_url: string
   percentage: string
   cumulativePercentage: string
+  /**
+   * Operator-self-declared URL where they publish payout audit
+   * reports (`aztec-staking-payout` or similar). Presence flags the
+   * provider as manual-payout in the list view — the user can't
+   * claim on-chain from this delegation.
+   */
+  manualPayoutAuditUrl?: string
 }
 
 export interface NotAssociatedStake {

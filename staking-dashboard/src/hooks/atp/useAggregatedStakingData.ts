@@ -53,6 +53,14 @@ export interface DelegationBreakdown extends EffectiveRollupHints {
   providerId: number
   providerName?: string
   providerLogo?: string
+  /**
+   * Set when the provider distributes rewards out of protocol via
+   * the `aztec-staking-payout` tool. The claim UI uses this to point
+   * the delegator at the operator's audit reports, and to suppress
+   * the claim CTA once any pre-switch on-chain balance has been
+   * swept.
+   */
+  manualPayoutAuditUrl?: string
   attesterAddress: Address
   rollupAddress: Address
   stakedAmount: bigint
@@ -80,6 +88,8 @@ export interface Erc20DelegationBreakdown extends EffectiveRollupHints {
   providerId: number
   providerName?: string
   providerLogo?: string
+  /** See {@link DelegationBreakdown.manualPayoutAuditUrl}. */
+  manualPayoutAuditUrl?: string
   attesterAddress: Address
   rollupAddress: Address
   stakedAmount: bigint
@@ -165,6 +175,7 @@ interface ApiDelegation extends ApiEffectiveRollupHints {
   providerId: number
   providerName?: string
   providerLogo?: string
+  manualPayoutAuditUrl?: string
   attesterAddress: string
   rollupAddress: string
   stakedAmount: string
@@ -184,6 +195,7 @@ interface ApiErc20Delegation extends ApiEffectiveRollupHints {
   providerId: number
   providerName?: string
   providerLogo?: string
+  manualPayoutAuditUrl?: string
   attesterAddress: string
   rollupAddress: string
   stakedAmount: string
@@ -347,6 +359,7 @@ function parseDelegation(
     providerId: delegation.providerId,
     providerName: delegation.providerName,
     providerLogo: delegation.providerLogo,
+    manualPayoutAuditUrl: delegation.manualPayoutAuditUrl,
     attesterAddress: delegation.attesterAddress as Address,
     rollupAddress: delegation.rollupAddress as Address,
     ...extractEffectiveRollupHints(delegation),
@@ -418,6 +431,7 @@ function parseErc20Delegation(
     providerId: delegation.providerId,
     providerName: delegation.providerName,
     providerLogo: delegation.providerLogo,
+    manualPayoutAuditUrl: delegation.manualPayoutAuditUrl,
     attesterAddress: delegation.attesterAddress as Address,
     rollupAddress: delegation.rollupAddress as Address,
     ...extractEffectiveRollupHints(delegation),

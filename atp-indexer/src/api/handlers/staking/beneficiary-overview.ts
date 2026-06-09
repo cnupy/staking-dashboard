@@ -157,6 +157,10 @@ export async function handleBeneficiaryStakingOverview(c: Context): Promise<Resp
         providerId,
         providerName: metadata?.providerName || `Provider ${providerId}`,
         providerLogo: metadata?.providerLogoUrl || '',
+        // Pass through so the claim UI can replace its on-chain
+        // claim CTA with an informational link when this provider
+        // distributes rewards manually. See ProviderSummary type doc.
+        manualPayoutAuditUrl: metadata?.manualPayoutAuditUrl,
         attesterAddress: checksumAddress(delegation.attesterAddress),
         rollupAddress: checksumAddress(delegation.rollupAddress),
         // See directStakeBreakdown's note: fast-path hint for unstake routing.
@@ -185,6 +189,7 @@ export async function handleBeneficiaryStakingOverview(c: Context): Promise<Resp
         providerId,
         providerName: metadata?.providerName || `Provider ${providerId}`,
         providerLogo: metadata?.providerLogoUrl || '',
+        manualPayoutAuditUrl: metadata?.manualPayoutAuditUrl,
         attesterAddress: checksumAddress(delegation.attesterAddress),
         rollupAddress: checksumAddress(delegation.rollupAddress),
         // See directStakeBreakdown's note: fast-path hint for unstake routing.

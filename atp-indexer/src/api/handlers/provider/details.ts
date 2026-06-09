@@ -338,6 +338,9 @@ export async function handleProviderDetails(c: Context): Promise<Response> {
       })),
       ...(metadata?.providerSelfStake && metadata.providerSelfStake.length > 0 && {
         providerSelfStake: metadata.providerSelfStake.map(addr => checksumAddress(addr))
+      }),
+      ...(metadata?.manualPayoutAuditUrl && {
+        manualPayoutAuditUrl: metadata.manualPayoutAuditUrl
       })
     };
 

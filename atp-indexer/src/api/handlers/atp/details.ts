@@ -70,6 +70,7 @@ function formatDelegations(
         providerId,
         providerName: metadata?.providerName || `Provider ${providerId}`,
         providerLogo: metadata?.providerLogoUrl || '',
+        manualPayoutAuditUrl: metadata?.manualPayoutAuditUrl,
         operatorAddress: checksumAddress(op.attesterAddress),
         rollupAddress: checksumAddress(op.rollupAddress),
         // See formatDirectStakes for the rationale.

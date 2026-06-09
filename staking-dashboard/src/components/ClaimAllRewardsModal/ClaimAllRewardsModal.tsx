@@ -61,6 +61,15 @@ export const ClaimAllRewardsModal = ({
     let lastDistributeGroup: string | null = null
 
     // Per-delegation entries from the shared helper.
+    //
+    // We deliberately don't filter out manual-payout delegations here.
+    // The split contracts are permissionless, so a delegator can still
+    // sweep on-chain balances that accrued before the operator
+    // switched to out-of-protocol distribution.
+    // `buildDelegationClaimEntries` returns no entries when a
+    // delegation has nothing claimable (dust threshold included), so
+    // manual-payout delegations with a clean on-chain slate naturally
+    // contribute zero to the cart.
     for (const d of delegations) {
       const providerLabel = d.providerName ?? `Provider ${d.providerId}`
       const { entries, distributeGroup } = buildDelegationClaimEntries({
