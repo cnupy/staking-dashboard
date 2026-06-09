@@ -72,6 +72,13 @@ interface ProviderDetailResponse {
   logoUrl?: string
   stakes: ProviderStake[]
   takeRateHistory: TakeRateHistoryEntry[]
+  /**
+   * Operator-self-declared URL where they publish payout audit
+   * reports (e.g., from `aztec-staking-payout`). When present, the
+   * dashboard replaces on-chain claim CTAs with an informational
+   * notice pointing at this URL.
+   */
+  manualPayoutAuditUrl?: string
 }
 
 /**
@@ -104,6 +111,12 @@ export interface ProviderDetail {
   createdAtTime: string
   stakes: ProviderStake[]
   takeRateHistory: TakeRateHistoryEntry[]
+  /**
+   * When set, this operator distributes rewards manually rather than
+   * via on-chain split contracts. The URL points to where they
+   * publish audit reports (typically a Git repo).
+   */
+  manualPayoutAuditUrl?: string
 }
 
 /**
@@ -142,6 +155,7 @@ function transformProviderData(data: ProviderDetailResponse): ProviderDetail {
     exitingStaked: data.exitingStaked,
     zombieDelegators: data.zombieDelegators,
     zombieStaked: data.zombieStaked,
+    manualPayoutAuditUrl: data.manualPayoutAuditUrl,
     createdAtBlock: data.createdAtBlock,
     createdAtTx: data.createdAtTx,
     createdAtTime: data.createdAtTime,

@@ -27,8 +27,17 @@ export const ClaimAllRewardsSummary = ({
   onStartClaiming,
   isDisabled
 }: ClaimAllRewardsSummaryProps) => {
-  // Filter to only items with rewards
+  // Anything with on-chain rewards shows in the main list — including
+  // manual-payout delegations during the transition window, when their
+  // split still holds balance the delegator can sweep themselves. The
+  // row in that case gets a "manual payout" badge so the user knows
+  // future rewards will come out of protocol. The separate "Manual
+  // payouts" section below lists ONLY manual-payout delegations with
+  // no remaining on-chain balance — purely informational.
   const delegationsWithRewards = delegations.filter(d => d.rewards > 0n)
+  const manualPayoutDelegations = delegations.filter(
+    d => d.manualPayoutAuditUrl && d.rewards === 0n,
+  )
   const coinbasesWithRewards = coinbases.filter(c => c.rewards > 0n)
 
   // Calculate totals
@@ -99,7 +108,7 @@ export const ClaimAllRewardsSummary = ({
                   className="bg-parchment/5 border border-parchment/20 p-3"
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-chartreuse/20 text-chartreuse text-xs font-bold uppercase tracking-wide">
                         <Icon name="users" size="sm" />
                         {delegation.providerName || `Provider ${delegation.providerId}`}
@@ -107,6 +116,24 @@ export const ClaimAllRewardsSummary = ({
                       <span className="text-xs text-parchment/40">
                         {userPercentage}% yours
                       </span>
+                      {delegation.manualPayoutAuditUrl && (
+                        // The operator has switched to out-of-protocol
+                        // distribution, but this delegation still has
+                        // claimable on-chain balance accrued before
+                        // the switch. The user can sweep it now;
+                        // future rewards will come out of protocol.
+                        <a
+                          href={delegation.manualPayoutAuditUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Operator distributes future rewards out of protocol. Claim sweeps remaining on-chain balance."
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-oracle-standard uppercase tracking-wider bg-aqua/10 border border-aqua/40 text-aqua hover:bg-aqua/20 transition-colors"
+                        >
+                          <Icon name="info" size="sm" />
+                          Manual payout next
+                        </a>
+                      )}
                     </div>
                     <div className="text-right">
                       <div className="font-mono text-sm font-bold text-chartreuse">
@@ -125,6 +152,48 @@ export const ClaimAllRewardsSummary = ({
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Manual-payout delegations with no remaining on-chain balance.
+          Listed for transparency so the user knows where rewards for
+          these delegations are arriving from. Delegations that DO
+          have on-chain balance are in the main claimable list above
+          with a "Manual payout next" badge — they can still be swept
+          here during the transition window. */}
+      {manualPayoutDelegations.length > 0 && (
+        <div>
+          <div className="text-xs text-parchment/40 uppercase tracking-wide mb-3">
+            Direct from operator ({manualPayoutDelegations.length})
+          </div>
+          <div className="space-y-2">
+            {manualPayoutDelegations.map((delegation) => (
+              <div
+                key={delegation.splitContract}
+                className="bg-aqua/5 border border-aqua/30 p-3 flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-aqua/20 text-aqua text-xs font-bold uppercase tracking-wide">
+                    <Icon name="info" size="sm" />
+                    {delegation.providerName || `Provider ${delegation.providerId}`}
+                  </span>
+                  <span className="text-xs text-parchment/60">
+                    Receives rewards directly from operator
+                  </span>
+                </div>
+                {delegation.manualPayoutAuditUrl && (
+                  <a
+                    href={delegation.manualPayoutAuditUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-aqua hover:underline shrink-0"
+                  >
+                    Audit reports →
+                  </a>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}

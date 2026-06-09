@@ -56,12 +56,14 @@ export const WalletStakesDetailsModal = ({
     providerName: string | null
     providerTakeRate: number
     providerRewardsRecipient: Address
+    manualPayoutAuditUrl?: string
   }) => {
     setSelectedDelegation({
       splitContract: delegation.splitContract,
       providerName: delegation.providerName,
       providerTakeRate: delegation.providerTakeRate,
-      providerRewardsRecipient: delegation.providerRewardsRecipient
+      providerRewardsRecipient: delegation.providerRewardsRecipient,
+      manualPayoutAuditUrl: delegation.manualPayoutAuditUrl,
     })
     setIsDelegationClaimModalOpen(true)
   }
@@ -173,6 +175,7 @@ export const WalletStakesDetailsModal = ({
                         splitContractBalance: d.splitContractBalance,
                         providerName: d.providerName,
                         providerId: d.providerId,
+                        manualPayoutAuditUrl: d.manualPayoutAuditUrl,
                       }))}
                     onSuccess={onWithdrawSuccess}
                   />

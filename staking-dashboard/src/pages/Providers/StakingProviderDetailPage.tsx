@@ -3,6 +3,7 @@ import { ProviderOverview } from "@/components/Provider/ProviderOverview";
 import { ProviderStakingFlow } from "@/components/Provider/ProviderStakingFlow";
 import { ProviderSequencerList } from "@/components/Provider/ProviderSequencerList";
 import { ProviderDetailSkeleton } from "@/components/Provider/ProviderDetailSkeleton";
+import { ManualPayoutNotice } from "@/components/Provider/ManualPayoutNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { useProviderDetail } from "@/hooks/providers/useProviderDetail";
 import { Link } from "react-router-dom";
@@ -47,6 +48,13 @@ export default function StakingProviderDetailPage() {
       />
 
       <ProviderOverview provider={provider} />
+
+      {provider.manualPayoutAuditUrl && (
+        <ManualPayoutNotice
+          auditUrl={provider.manualPayoutAuditUrl}
+          providerName={provider.name}
+        />
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Left Column - Provider Information & Stakes */}

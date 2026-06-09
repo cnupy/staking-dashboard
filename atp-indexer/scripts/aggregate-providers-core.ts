@@ -10,6 +10,16 @@ export interface ProviderMetadata {
   providerLogoUrl: string;
   discordUsername: string;
   providerSelfStake?: string[];
+  /**
+   * Operators using the `aztec-staking-payout` tool (or any other
+   * out-of-protocol payout mechanism) point this at the URL where
+   * their distribution audit reports are published — typically a
+   * public Git repo. Presence of this field flips the UI from "claim
+   * your rewards via the protocol" to an informational notice; the
+   * URL is also surfaced as a link so delegators can verify
+   * distributions. Operator-self-declared, not platform-verified.
+   */
+  manualPayoutAuditUrl?: string;
 }
 
 /**
@@ -25,11 +35,32 @@ export function normalizeProvider(metadata: any, filename: string): ProviderMeta
 
   const warnings: string[] = [];
 
-  // Helper to validate URL
+  // Validate a URL as syntactically well-formed AND http(s)-scheme
+  // AND free of embedded userinfo.
+  //
+  // 1. Protocol whitelist is the load-bearing security check: every
+  //    URL field on a provider eventually lands in an `<a href>`
+  //    somewhere in the dashboard, and `new URL(...)` happily parses
+  //    `javascript:`, `data:`, `vbscript:`, etc. without complaint.
+  //    React does not block scripted-scheme hrefs at render time, so
+  //    accepting those would let a malicious operator config execute
+  //    arbitrary JS in the dashboard origin.
+  // 2. Reject `https://attacker@trusted.com/`-style userinfo too:
+  //    legitimate audit-report URLs never have credentials in them,
+  //    but a malicious one can use the userinfo trick to make the
+  //    displayed text look like a trusted domain while the browser
+  //    actually navigates to the userinfo-encoded host. Defense in
+  //    depth — modern browsers obscure the userinfo, but not all
+  //    have done so consistently.
+  //
+  // Closes all three vectors at the only ingress point for these
+  // fields (`providerWebsite`, `providerLogoUrl`, `manualPayoutAuditUrl`).
   const validateUrl = (url: string): boolean => {
     try {
-      new URL(url);
-      return true;
+      const parsed = new URL(url);
+      return (parsed.protocol === "http:" || parsed.protocol === "https:")
+        && parsed.username === ""
+        && parsed.password === "";
     } catch {
       return false;
     }
@@ -65,6 +96,14 @@ export function normalizeProvider(metadata: any, filename: string): ProviderMeta
     ? metadata.providerSelfStake.filter((addr: any) => typeof addr === 'string' && addr.trim().length > 0)
     : undefined;
 
+  // Validate manualPayoutAuditUrl (optional URL pointing at where the
+  // operator publishes payout audit reports). Drop silently on a
+  // malformed URL — better to omit the field than show a broken link.
+  const manualPayoutAuditUrl =
+    typeof metadata.manualPayoutAuditUrl === 'string' && validateUrl(metadata.manualPayoutAuditUrl)
+      ? metadata.manualPayoutAuditUrl
+      : undefined;
+
   // Collect warnings for missing/invalid fields
   if (!providerName) warnings.push('providerName');
   if (!providerDescription) warnings.push('providerDescription');
@@ -90,6 +129,10 @@ export function normalizeProvider(metadata: any, filename: string): ProviderMeta
   // Only add providerSelfStake if it has valid entries
   if (providerSelfStake && providerSelfStake.length > 0) {
     result.providerSelfStake = providerSelfStake;
+  }
+
+  if (manualPayoutAuditUrl) {
+    result.manualPayoutAuditUrl = manualPayoutAuditUrl;
   }
 
   return result;

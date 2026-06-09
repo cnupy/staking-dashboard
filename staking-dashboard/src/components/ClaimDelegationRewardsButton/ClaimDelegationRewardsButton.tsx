@@ -22,6 +22,13 @@ interface ClaimDelegationRewardsButtonProps {
    *  picks out the canonical row and treats the rest as stranded balances to
    *  claim before the canonical claim. */
   rollupRewardsByRollup: Array<{ rollupAddress: Address; rollupVersion: string; rewards: bigint }>
+  /**
+   * When set, the operator distributes rewards out of protocol — the
+   * button collapses to a disabled state with an "audit reports"
+   * link rather than the standard claim CTA. Provided by the API on
+   * each delegation row; see `DelegationBreakdown.manualPayoutAuditUrl`.
+   */
+  manualPayoutAuditUrl?: string
   onSuccess?: () => void
   variant?: 'default' | 'modal'
 }
@@ -38,6 +45,7 @@ export const ClaimDelegationRewardsButton = ({
   providerRewardsRecipient,
   providerName,
   rollupRewardsByRollup,
+  manualPayoutAuditUrl,
   onSuccess,
   variant = 'default'
 }: ClaimDelegationRewardsButtonProps) => {
@@ -160,7 +168,42 @@ export const ClaimDelegationRewardsButton = ({
     if (!warehouseAddress) return 'Loading warehouse address...'
     if (!hasRewards) return 'No rewards available to claim'
     if (isInBatch) return 'Already added to the transaction batch — open the cart to execute'
+    if (manualPayoutAuditUrl) {
+      // The split contracts are permissionless, so a delegator can always
+      // sweep whatever's still on-chain even if the operator has moved
+      // to out-of-protocol distribution. Future rewards for this
+      // delegation will arrive directly from the operator instead.
+      return 'Claim the on-chain balance for this delegation. Future rewards will be paid directly by the operator — see their audit reports.'
+    }
     return 'Add the full delegation claim flow to the transaction batch'
+  }
+
+  // Off-chain payouts: operator distributes via the
+  // `aztec-staking-payout` tool. We ONLY collapse to the audit-link
+  // CTA when there's nothing on-chain left to claim. During the
+  // transition (existing rollup-pending / split / warehouse balances
+  // accrued before the switch), the on-chain claim flow still works
+  // and the dashboard should expose it — otherwise a delegator can
+  // get stranded if the operator forgot to wind down outstanding
+  // balances. Placed after the hook calls so we don't violate the
+  // rules of hooks.
+  if (manualPayoutAuditUrl && !hasRewards) {
+    return (
+      <a
+        href={manualPayoutAuditUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`${providerName ?? "This operator"} pays out rewards out of protocol. View their audit reports.`}
+        className={
+          variant === 'modal'
+            ? "px-6 py-3 border border-aqua/40 bg-aqua/10 text-aqua font-oracle-standard font-bold text-sm uppercase tracking-wider hover:bg-aqua/20 transition-colors inline-flex items-center justify-center gap-2"
+            : "px-3 py-1.5 border border-aqua/40 bg-aqua/10 text-aqua font-oracle-standard text-xs font-bold uppercase tracking-wide whitespace-nowrap hover:bg-aqua/20 transition-colors inline-flex items-center gap-1.5"
+        }
+      >
+        <Icon name="info" size="sm" />
+        Manual payout
+      </a>
+    )
   }
 
   return (

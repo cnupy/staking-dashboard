@@ -229,12 +229,14 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
     providerName: string | null
     providerTakeRate: number
     providerRewardsRecipient: string
+    manualPayoutAuditUrl?: string
   }) => {
     setSelectedDelegation({
       splitContract: delegation.splitContract as Address,
       providerName: delegation.providerName,
       providerTakeRate: delegation.providerTakeRate,
-      providerRewardsRecipient: delegation.providerRewardsRecipient as Address
+      providerRewardsRecipient: delegation.providerRewardsRecipient as Address,
+      manualPayoutAuditUrl: delegation.manualPayoutAuditUrl,
     })
     setIsDelegationClaimModalOpen(true)
   }
@@ -437,6 +439,7 @@ export const ATPDetailsModal = ({ atp, isOpen, onClose, onWithdrawSuccess, onRef
                         splitContractBalance: rewards?.splitContractBalance,
                         providerName: d.providerName,
                         providerId: d.providerId,
+                        manualPayoutAuditUrl: d.manualPayoutAuditUrl,
                       }
                     })}
                   onSuccess={refetchDelegationRewards}

@@ -30,6 +30,16 @@ interface DelegationClaim {
   splitContractBalance?: bigint
   providerName?: string | null
   providerId?: number
+  /**
+   * Operator distributes rewards out of protocol via the
+   * `aztec-staking-payout` tool. The bulk-claim queue still includes
+   * this delegation when the underlying dust-aware predicate finds
+   * on-chain balance to sweep (transition cleanup); it drops out
+   * naturally once the split is drained. The per-row claim button
+   * surfaces the audit link in place of the standard CTA when there's
+   * nothing left to claim.
+   */
+  manualPayoutAuditUrl?: string
 }
 
 interface ClaimAllDelegationRewardsButtonProps {
@@ -64,6 +74,14 @@ export const ClaimAllDelegationRewardsButton = ({
   // count matches what actually gets queued; a bare `> 0n` here would let
   // 0xSplits v2's 1-wei post-distribute residue inflate the count even
   // though the builder discards those delegations downstream.
+  // Filter to delegations with anything actually claimable on-chain.
+  // We INCLUDE manual-payout delegations here when they still have
+  // on-chain balance — the split contracts are permissionless, so a
+  // delegator can sweep the residual balance themselves even after
+  // the operator has switched to out-of-protocol distribution. The
+  // per-row claim button collapses to an audit-link CTA only when
+  // there's nothing left to sweep. Without this, transition-period
+  // balances would silently strand.
   const dustThreshold = useMemo(() => getRecoveryDustThreshold(decimals ?? 18), [decimals])
   const claimableDelegations = useMemo(() => {
     const canonicalRollup = contracts.rollup.address.toLowerCase()

@@ -10,6 +10,16 @@ export interface ProviderMetadata {
   providerLogoUrl: string;
   discordUsername: string;
   providerSelfStake?: string[];
+  /**
+   * Optional URL where the operator publishes audit reports from the
+   * `aztec-staking-payout` tool (or any out-of-protocol payout
+   * mechanism). Presence indicates the operator distributes rewards
+   * manually; the dashboard surfaces this link in place of the
+   * standard claim flow for delegations against this provider, but
+   * lets the on-chain claim flow run when a delegation still has
+   * residual balance on the split contracts.
+   */
+  manualPayoutAuditUrl?: string;
 }
 
 /** Cache TTL in milliseconds (5 minutes) */

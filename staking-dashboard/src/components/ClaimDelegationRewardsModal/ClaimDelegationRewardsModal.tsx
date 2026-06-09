@@ -19,6 +19,13 @@ export interface DelegationModalData {
   providerName: string | null
   providerTakeRate: number
   providerRewardsRecipient: Address
+  /**
+   * When set, the operator pays out out of protocol via the
+   * `aztec-staking-payout` tool. The modal's claim CTA collapses to
+   * an audit-reports link via the same prop on
+   * `ClaimDelegationRewardsButton`.
+   */
+  manualPayoutAuditUrl?: string
 }
 
 interface ClaimDelegationRewardsModalProps {
@@ -316,6 +323,7 @@ export const ClaimDelegationRewardsModal = ({
                 providerTakeRate={delegation.providerTakeRate}
                 providerRewardsRecipient={delegation.providerRewardsRecipient}
                 providerName={delegation.providerName}
+                manualPayoutAuditUrl={delegation.manualPayoutAuditUrl}
                 rollupRewardsByRollup={perRollupRows.map(r => ({
                   rollupAddress: r.rollupAddress,
                   rollupVersion: r.rollupVersion ?? "?",

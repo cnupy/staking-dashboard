@@ -38,6 +38,8 @@ export interface Delegation extends EffectiveRollupHints {
   providerId: number
   providerName?: string
   providerLogo?: string
+  /** See {@link DelegationBreakdown.manualPayoutAuditUrl}. */
+  manualPayoutAuditUrl?: string
   operatorAddress: string
   rollupAddress: string
   splitContract: string

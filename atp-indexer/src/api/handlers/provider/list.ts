@@ -217,6 +217,9 @@ export async function handleProviderList(c: Context): Promise<Response> {
         discord: meta?.discordUsername || '',
         ...(meta?.providerSelfStake && meta.providerSelfStake.length > 0 && {
           providerSelfStake: meta.providerSelfStake.map(addr => checksumAddress(addr))
+        }),
+        ...(meta?.manualPayoutAuditUrl && {
+          manualPayoutAuditUrl: meta.manualPayoutAuditUrl
         })
       };
     });
