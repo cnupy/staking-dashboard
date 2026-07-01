@@ -1,0 +1,10 @@
+{
+  "providerId": 50,
+  "providerName": "TestInc",
+  "providerDescription": "Testing provider. Do not delegate.",
+  "providerEmail": "example@example.com",
+  "providerWebsite": "https://example.com",
+  "providerLogoUrl": "",
+  "discordUsername": "",
+  "providerSelfStake": []
+}
