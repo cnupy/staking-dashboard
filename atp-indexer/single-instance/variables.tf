@@ -47,9 +47,9 @@ variable "si_atp_database_schema" {
 }
 
 variable "si_atp_indexer_domain" {
-  description = "Public hostname for the ATP indexer API"
+  description = "Public hostname for the ATP indexer API. Convention: api.<env>.stake.aztec.network, and api.stake.aztec.network for prod — one stable branded endpoint (instead of a raw *.cloudfront.net URL) so the frontend never changes when the infra behind it does."
   type        = string
-  default     = "indexer.testnet.stake.aztec.network"
+  default     = "api.testnet.stake.aztec.network"
 }
 
 variable "si_acme_email" {

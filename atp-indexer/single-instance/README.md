@@ -19,6 +19,13 @@ moves the expensive indexer.
   (us-east-1), an http-only origin via a stable `atp-si-origin.<env>` A-record → EIP, and the
   CloudFront secret header that Caddy enforces.
 
+## Endpoint
+
+Hostname convention: **`api.<env>.stake.aztec.network`**, and **`api.stake.aztec.network`**
+for prod — one stable, branded API endpoint. The dashboard's `VITE_API_HOST` points at it
+instead of a raw `*.cloudfront.net` URL, so swapping the infra behind it (fleet → box, or
+anything later) never requires a frontend change again.
+
 ## Deploy
 ```sh
 cd atp-indexer/single-instance
@@ -27,7 +34,7 @@ terraform apply \
   -var env=testnet \
   -var si_atp_indexer_image=<account>.dkr.ecr.eu-west-2.amazonaws.com/staking-dashboard-testnet-atp-indexer:<tag> \
   -var si_atp_database_schema=atp_indexer \
-  -var si_atp_indexer_domain=indexer.testnet.stake.aztec.network
+  -var si_atp_indexer_domain=api.testnet.stake.aztec.network
 ```
 Then SSM onto the box, populate `/opt/staking-dashboard-atp/env/atp-indexer.env` with the
 **same values the ECS task-def used** — copy the full set from `atp-indexer/terraform/app.tf`
