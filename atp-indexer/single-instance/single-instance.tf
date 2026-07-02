@@ -63,13 +63,18 @@ resource "aws_security_group" "instance" {
     cidr_blocks     = var.si_front_with_cloudfront ? [] : var.si_allowed_http_cidrs
     prefix_list_ids = data.aws_ec2_managed_prefix_list.cloudfront[*].id
   }
-  ingress {
-    description     = "HTTPS"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    cidr_blocks     = var.si_front_with_cloudfront ? [] : var.si_allowed_http_cidrs
-    prefix_list_ids = data.aws_ec2_managed_prefix_list.cloudfront[*].id
+  # HTTPS only in Caddy-direct mode. Behind CloudFront, Caddy serves plain HTTP on :80
+  # (CloudFront terminates viewer TLS), and the CloudFront origin-facing prefix list is
+  # large enough that attaching it to a second port exceeds the per-security-group rule quota.
+  dynamic "ingress" {
+    for_each = var.si_front_with_cloudfront ? [] : [443]
+    content {
+      description = "HTTPS"
+      from_port   = ingress.value
+      to_port     = ingress.value
+      protocol    = "tcp"
+      cidr_blocks = var.si_allowed_http_cidrs
+    }
   }
   egress {
     description = "Outbound internet"
@@ -135,7 +140,12 @@ resource "aws_ebs_volume" "data" {
   size              = var.si_data_volume_size_gb
   type              = "gp3"
   encrypted         = true
-  tags              = merge(local.si_tags, { Name = "${local.si_name}-data" })
+  # The Backup tag is what the DLM policy (single-instance-backup.tf) targets for daily
+  # snapshots; keyed per environment so each box's policy only snapshots its own volume.
+  tags = merge(local.si_tags, {
+    Name   = "${local.si_name}-data"
+    Backup = "${local.si_name}-data"
+  })
 }
 
 resource "aws_instance" "this" {
