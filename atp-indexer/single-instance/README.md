@@ -57,6 +57,25 @@ shared state isn't under the same env name. Overrides if ever needed:
 `-var cloudfront_secret_header_value=<secret>`, `-var si_cf_web_acl_arn=<arn>`.
 CloudFront serves viewer TLS; the box serves http-only to CloudFront only.
 
+## Deploys & resyncs (A/B on the box)
+
+The fleet used a whole second environment (prod-g) so a resync could run against a non-live
+backend. The box gets the same property from Ponder's schema-per-deploy model, one tier down:
+
+1. **Code deploy / resync (common case)** — run the new build as a second compose service
+   (`atp-indexer-next`, its own `DATABASE_SCHEMA`, internal port) against the same local
+   Postgres. It rebuilds its schema from the shared `ponder_sync` RPC cache (~2 min, zero
+   RPC refetch; a true from-chain resync also works and only that container pays for it)
+   while the live container keeps serving. Verify parity (row counts, spot queries), then
+   flip Caddy's `reverse_proxy` target (or swap the service image) — instant, no CloudFront
+   change. The old schema stays in Postgres as the instant rollback.
+2. **Box-level A/B (risky changes: OS, volume, Postgres major)** — the stack is additive, so
+   stand up a second box and repoint the `si-origin` A-record (60s TTL) at the new EIP.
+   CloudFront and the public hostname never change.
+
+Metadata-only image updates (providers.json) don't change the Ponder build fingerprint:
+pull + restart adopts the existing schema and is back at head in seconds.
+
 ## Cutover (decommission the old fleet)
 1. Stand up this box; seed/let it reach head (the indexer is RPC-bound — see ignition's
    ROAD-TO-PROD notes; restore a `pg_dump` if you have one to skip the reindex).
